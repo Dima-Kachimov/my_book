@@ -102,6 +102,10 @@ fun ReaderScreen(vm: AppViewModel, nav: NavController) {
                             selected = v.verse in selected,
                             trId = trId,
                             fontSize = vm.fontSize,
+                            fontFamily = vm.fontOption.family,
+                            lineSpacing = vm.lineSpacing,
+                            justify = vm.justify,
+                            bold = vm.boldText,
                             onClick = {
                                 selected = if (v.verse in selected) selected - v.verse else selected + v.verse
                             },
@@ -303,6 +307,10 @@ private fun VerseRow(
     selected: Boolean,
     trId: String,
     fontSize: Float,
+    fontFamily: FontFamily,
+    lineSpacing: Float,
+    justify: Boolean,
+    bold: Boolean,
     onClick: () -> Unit,
     onNoteClick: (NoteEntity) -> Unit,
 ) {
@@ -318,8 +326,10 @@ private fun VerseRow(
     ) {
         Row(verticalAlignment = Alignment.Top) {
             Text(
-                annotated, color = pal.text, fontSize = fontSize.sp, lineHeight = (fontSize * 1.55f).sp,
-                fontFamily = FontFamily.Serif, modifier = Modifier.weight(1f),
+                annotated, color = pal.text, fontSize = fontSize.sp, lineHeight = (fontSize * lineSpacing).sp,
+                fontFamily = fontFamily, fontWeight = if (bold) FontWeight.Medium else FontWeight.Normal,
+                textAlign = if (justify) TextAlign.Justify else TextAlign.Start,
+                modifier = Modifier.weight(1f),
             )
             if (bookmarked) {
                 Icon(Icons.Default.Bookmark, "Закладка", tint = pal.verseNum, modifier = Modifier.size(20.dp))

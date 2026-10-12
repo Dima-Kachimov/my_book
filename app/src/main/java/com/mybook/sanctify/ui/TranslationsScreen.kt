@@ -58,10 +58,13 @@ fun TranslationsScreen(vm: AppViewModel, nav: NavController) {
                 }
             }
             item {
-                OutlinedButton(
-                    onClick = { picker.launch(arrayOf("*/*")) },
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                ) { Text("Импорт из файла (JSON)") }
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                    OutlinedButton(onClick = { picker.launch(arrayOf("*/*")) }) { Text("Импорт из файла") }
+                    Text(
+                        "Поддерживаются модули MySword (.mybible), JSON getBible и JSON-строки. Так можно добавить любой свой перевод, например Турконяка.",
+                        color = pal.muted, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp),
+                    )
+                }
             }
 
             item { SectionLabel("Доступно для скачивания") }
@@ -87,6 +90,12 @@ fun TranslationsScreen(vm: AppViewModel, nav: NavController) {
                     }
                 }
                 is CatalogState.Ready -> {
+                    if (c.warning != null) item {
+                        Text(
+                            "Каталог getBible недоступен (${c.warning}). Показаны только дополнительные переводы.",
+                            color = pal.muted, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 16.dp),
+                        )
+                    }
                     val shown = c.items.filter {
                         (filter == "all" || (filter == "ru" && it.isRussian()) || (filter == "en" && it.isEnglish())) &&
                             (query.isBlank() || it.name.contains(query, true) || it.id.contains(query, true))
@@ -113,6 +122,9 @@ private fun CatalogRow(item: CatalogItem, installed: Boolean, progress: Float?, 
         Column(Modifier.weight(1f)) {
             Text(item.name, color = pal.text, fontWeight = FontWeight.Bold)
             Text("${item.language} · ${item.id}", color = pal.text.copy(alpha = 0.6f), fontSize = 12.sp)
+            if (item.note.isNotBlank()) {
+                Text(item.note, color = pal.muted, fontSize = 11.sp, modifier = Modifier.padding(top = 2.dp))
+            }
         }
         when {
             progress != null -> CircularProgressIndicator(

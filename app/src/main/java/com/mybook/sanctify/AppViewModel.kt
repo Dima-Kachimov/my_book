@@ -3,6 +3,7 @@ package com.mybook.sanctify
 import android.app.Application
 import android.content.Context
 import android.net.Uri
+import java.io.File
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -11,6 +12,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.room.withTransaction
 import com.mybook.sanctify.data.*
+import com.mybook.sanctify.ui.FontOption
 import com.mybook.sanctify.ui.ThemeMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -21,9 +23,27 @@ import kotlinx.serialization.json.Json
 
 data class Pos(val book: Int, val chapter: Int)
 
+enum class SearchMode(val title: String) { ALL("Все слова"), ANY("Любое слово"), PHRASE("Точная фраза") }
+
+data class SearchOptions(
+    val query: String,
+    val mode: SearchMode,
+    val matchCase: Boolean,
+    val wholeWord: Boolean,
+    val translationId: String,
+    val fromBook: Int,
+    val toBook: Int,
+)
+
+class SearchHit(val verse: VerseEntity, val ranges: List<IntRange>) {
+    companion object {
+        const val LIMIT = 500
+    }
+}
+
 sealed interface CatalogState {
     data object Loading : CatalogState
-    data class Ready(val items: List<CatalogItem>) : CatalogState
+    data class Ready(val items: List<CatalogItem>, val warning: String? = null) : CatalogState
     data class Error(val message: String) : CatalogState
 }
 
@@ -47,6 +67,37 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
     fun setTheme(m: ThemeMode) {
         themeMode = m
         prefs.edit().putInt("theme", m.ordinal).apply()
+    }
+
+    var fontOption by mutableStateOf(
+        FontOption.values().getOrElse(prefs.getInt("fontFamily", 0)) { FontOption.SERIF }
+    )
+        private set
+    var lineSpacing by mutableFloatStateOf(prefs.getFloat("lineSpacing", 1.55f))
+        private set
+    var justify by mutableStateOf(prefs.getBoolean("justify", false))
+        private set
+    var boldText by mutableStateOf(prefs.getBoolean("bold", false))
+        private set
+
+    fun changeFontOption(o: FontOption) {
+        fontOption = o
+        prefs.edit().putInt("fontFamily", o.ordinal).apply()
+    }
+
+    fun changeLineSpacing(v: Float) {
+        lineSpacing = v
+        prefs.edit().putFloat("lineSpacing", v).apply()
+    }
+
+    fun changeJustify(v: Boolean) {
+        justify = v
+        prefs.edit().putBoolean("justify", v).apply()
+    }
+
+    fun changeBold(v: Boolean) {
+        boldText = v
+        prefs.edit().putBoolean("bold", v).apply()
     }
 
     fun changeFontSize(v: Float) {
@@ -136,11 +187,33 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
     suspend fun verseText(book: Int, chapter: Int, verse: Int): String? =
         dao.range(trId.value, book, chapter, verse, verse).firstOrNull()?.text
 
-    suspend fun search(q: String): List<VerseEntity> {
-        val t = q.trim()
-        if (t.length < 2) return emptyList()
-        val cap = t.replaceFirstChar { it.uppercase() }
-        return dao.search(trId.value, t, t.lowercase(), cap, 300)
+    /** Расширенный поиск: режимы «все слова / любое / фраза», регистр, целые слова, диапазон книг. */
+    suspend fun search(o: SearchOptions): List<SearchHit> = withContext(Dispatchers.Default) {
+        val q = o.query.trim()
+        if (q.length < 2) return@withContext emptyList()
+        val options = if (o.matchCase) emptySet<RegexOption>() else setOf(RegexOption.IGNORE_CASE)
+        fun regexOf(body: String): Regex {
+            val wrapped = if (o.wholeWord) "(?<![\\p{L}\\p{N}])$body(?![\\p{L}\\p{N}])" else body
+            return Regex(wrapped, options)
+        }
+        val words = q.split(Regex("\\s+")).filter { it.isNotBlank() }
+        val regexes = if (o.mode == SearchMode.PHRASE) {
+            listOf(regexOf(words.joinToString("\\s+") { Regex.escape(it) }))
+        } else {
+            words.map { regexOf(Regex.escape(it)) }
+        }
+        val from = minOf(o.fromBook, o.toBook)
+        val to = maxOf(o.fromBook, o.toBook)
+        val hits = ArrayList<SearchHit>()
+        for (v in dao.versesInBooks(o.translationId, from, to)) {
+            val perRegex = regexes.map { r -> r.findAll(v.text).map { it.range }.toList() }
+            val ok = if (o.mode == SearchMode.ANY) perRegex.any { it.isNotEmpty() } else perRegex.all { it.isNotEmpty() }
+            if (ok) {
+                hits.add(SearchHit(v, perRegex.flatten()))
+                if (hits.size >= SearchHit.LIMIT) break
+            }
+        }
+        hits
     }
 
     // ---------- Пометки ----------
@@ -273,12 +346,18 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
 
     fun loadCatalog() = viewModelScope.launch {
         catalog.value = CatalogState.Loading
-        catalog.value = try {
-            val items = withContext(Dispatchers.IO) { BibleApi.catalog() }
-            CatalogState.Ready(items.sortedWith(compareBy({ !it.isRussian() }, { it.language }, { it.name })))
+        var failure: String? = null
+        val remote = try {
+            withContext(Dispatchers.IO) { BibleApi.catalog() }
         } catch (e: Exception) {
-            CatalogState.Error(e.message ?: e.javaClass.simpleName)
+            failure = e.message ?: e.javaClass.simpleName
+            emptyList()
         }
+        val items = BibleApi.extraCatalog + remote.filter { r -> BibleApi.extraCatalog.none { it.id == r.id } }
+        catalog.value = CatalogState.Ready(
+            items.sortedWith(compareBy({ !it.isRussian() }, { it.url == null }, { it.language }, { it.name })),
+            failure,
+        )
     }
 
     fun download(item: CatalogItem) = viewModelScope.launch {
@@ -286,9 +365,9 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
         setProgress(item.id, 0f)
         try {
             val text = withContext(Dispatchers.IO) {
-                BibleApi.fetch(BibleApi.downloadUrl(item.id)) { setProgress(item.id, it) }
+                BibleApi.fetch(item.url ?: BibleApi.downloadUrl(item.id)) { setProgress(item.id, it) }
             }
-            val parsed = withContext(Dispatchers.Default) { BibleApi.parse(text, item.id) }
+            val parsed = withContext(Dispatchers.Default) { BibleApi.parseAuto(text, item.id) }
             saveTranslation(TranslationEntity(item.id, item.name, item.language), parsed.verses)
             messages.emit("«${item.name}» установлен")
         } catch (e: Exception) {
@@ -298,13 +377,24 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Импорт из файла: JSON getBible, JSON-строки или модуль MySword (SQLite). */
     fun importFile(uri: Uri) = viewModelScope.launch {
         try {
-            val text = withContext(Dispatchers.IO) {
-                app.contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
+            val parsed = withContext(Dispatchers.Default) {
+                val bytes = app.contentResolver.openInputStream(uri)?.use { it.readBytes() }
                     ?: error("Не удалось открыть файл")
+                if (bytes.size > 15 && String(bytes, 0, 15, Charsets.ISO_8859_1) == "SQLite format 3") {
+                    val f = File(app.cacheDir, "import_module.db")
+                    f.writeBytes(bytes)
+                    try {
+                        BibleApi.parseMySword(f.path, null)
+                    } finally {
+                        f.delete()
+                    }
+                } else {
+                    BibleApi.parseAuto(bytes.toString(Charsets.UTF_8), null)
+                }
             }
-            val parsed = withContext(Dispatchers.Default) { BibleApi.parse(text, null) }
             saveTranslation(TranslationEntity(parsed.id, parsed.name, parsed.language), parsed.verses)
             messages.emit("«${parsed.name}» импортирован")
         } catch (e: Exception) {

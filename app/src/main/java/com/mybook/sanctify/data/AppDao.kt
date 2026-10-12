@@ -38,6 +38,12 @@ interface AppDao {
     )
     suspend fun range(t: String, b: Int, c: Int, from: Int, to: Int): List<VerseEntity>
 
+    @Query(
+        "SELECT * FROM verses WHERE translationId = :t AND book BETWEEN :from AND :to " +
+            "ORDER BY book, chapter, verse"
+    )
+    suspend fun versesInBooks(t: String, from: Int, to: Int): List<VerseEntity>
+
     // SQLite LIKE регистронезависим только для ASCII, поэтому передаём варианты регистра.
     @Query(
         "SELECT * FROM verses WHERE translationId = :t AND (text LIKE '%' || :q1 || '%' " +
