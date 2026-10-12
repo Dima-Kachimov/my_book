@@ -49,7 +49,7 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
         prefs.edit().putInt("theme", m.ordinal).apply()
     }
 
-    fun setFontSize(v: Float) {
+    fun changeFontSize(v: Float) {
         fontSize = v
         prefs.edit().putFloat("font", v).apply()
     }

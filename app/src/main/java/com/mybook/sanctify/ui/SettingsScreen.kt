@@ -29,7 +29,7 @@ fun SettingsScreen(vm: AppViewModel, nav: NavController) {
         ScreenHeader("Настройки", onBack = { nav.popBackStack() })
         Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp)) {
             Text("Размер шрифта: ${vm.fontSize.toInt()}", color = pal.text)
-            Slider(value = vm.fontSize, onValueChange = { vm.setFontSize(it) }, valueRange = 14f..34f)
+            Slider(value = vm.fontSize, onValueChange = { vm.changeFontSize(it) }, valueRange = 14f..34f)
             Text("Так выглядит текст Библии при чтении.", color = pal.text, fontSize = vm.fontSize.sp)
 
             Spacer(Modifier.height(20.dp))
