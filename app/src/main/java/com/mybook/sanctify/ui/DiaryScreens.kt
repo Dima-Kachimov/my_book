@@ -3,7 +3,9 @@ package com.mybook.sanctify.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -20,7 +22,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.material.icons.filled.Check
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.mybook.sanctify.AppViewModel
@@ -59,6 +64,10 @@ fun DiaryScreen(vm: AppViewModel, nav: NavController) {
                         }
                         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                             DropdownMenuItem(text = { Text("Переименовать раздел") }, onClick = { menu = false; renaming = true })
+                            DropdownMenuItem(
+                                text = { Text(if (current.isList) "Показывать как записи" else "Показывать как нумерованный список") },
+                                onClick = { menu = false; vm.setSectionList(current, !current.isList) },
+                            )
                             if (!current.isDefault) {
                                 DropdownMenuItem(text = { Text("Удалить раздел") }, onClick = { menu = false; deleting = true })
                             }
@@ -79,35 +88,39 @@ fun DiaryScreen(vm: AppViewModel, nav: NavController) {
                         )
                     }
                 }
-                if (entries.isEmpty()) {
-                    Text(
-                        "В этом разделе пока нет записей.\nНажмите «+», чтобы добавить, или выберите стихи в Библии и нажмите «Дневник».",
-                        color = pal.text, modifier = Modifier.padding(24.dp),
-                    )
-                }
-                LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(vertical = 8.dp, horizontal = 0.dp)) {
-                    items(entries, key = { it.id }) { e ->
-                        ClickableCard(onClick = { nav.navigate("entry/${e.id}") }) {
-                            Text(
-                                e.title.ifBlank { "Без названия" }, color = pal.text,
-                                fontWeight = FontWeight.Bold, fontSize = 18.sp,
-                                fontFamily = androidx.compose.ui.text.font.FontFamily.Serif,
-                            )
-                            if (e.body.isNotBlank()) {
-                                Text(e.body, color = pal.text, maxLines = 3, modifier = Modifier.padding(top = 4.dp))
-                            }
-                            Text(
-                                dateFmt.format(Date(e.updatedAt)),
-                                color = pal.text.copy(alpha = 0.6f), fontSize = 12.sp,
-                                modifier = Modifier.padding(top = 6.dp),
-                            )
-                        }
+                if (current.isList) {
+                    NumberedList(vm, current, entries, Modifier.weight(1f))
+                } else {
+                    if (entries.isEmpty()) {
+                        Text(
+                            "В этом разделе пока нет записей.\nНажмите «+», чтобы добавить, или выберите стихи в Библии и нажмите «Дневник».",
+                            color = pal.text, modifier = Modifier.padding(24.dp),
+                        )
                     }
-                    item { Spacer(Modifier.height(80.dp)) }
+                    LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(vertical = 8.dp, horizontal = 0.dp)) {
+                        items(entries, key = { it.id }) { e ->
+                            ClickableCard(onClick = { nav.navigate("entry/${e.id}") }) {
+                                Text(
+                                    e.title.ifBlank { "Без названия" }, color = pal.text,
+                                    fontWeight = FontWeight.Bold, fontSize = 18.sp,
+                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Serif,
+                                )
+                                if (e.body.isNotBlank()) {
+                                    Text(e.body, color = pal.text, maxLines = 3, modifier = Modifier.padding(top = 4.dp))
+                                }
+                                Text(
+                                    dateFmt.format(Date(e.updatedAt)),
+                                    color = pal.text.copy(alpha = 0.6f), fontSize = 12.sp,
+                                    modifier = Modifier.padding(top = 6.dp),
+                                )
+                            }
+                        }
+                        item { Spacer(Modifier.height(80.dp)) }
+                    }
                 }
             }
         }
-        if (current != null) {
+        if (current != null && !current.isList) {
             FloatingActionButton(
                 onClick = { scope.launch { nav.navigate("entry/${vm.createEntry(current.id)}") } },
                 containerColor = MaterialTheme.colorScheme.primary,
@@ -119,7 +132,28 @@ fun DiaryScreen(vm: AppViewModel, nav: NavController) {
     }
 
     if (addSection) {
-        TextPromptDialog("Новый раздел", label = "Название", onOk = { vm.addSection(it); addSection = false }, onDismiss = { addSection = false })
+        var name by remember { mutableStateOf("") }
+        var asList by remember { mutableStateOf(false) }
+        AlertDialog(
+            onDismissRequest = { addSection = false },
+            title = { Text("Новый раздел") },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = name, onValueChange = { name = it }, label = { Text("Название") },
+                        singleLine = true, modifier = Modifier.fillMaxWidth(),
+                    )
+                    Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Нумерованный список (1, 2, 3…)", modifier = Modifier.weight(1f))
+                        Switch(checked = asList, onCheckedChange = { asList = it })
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { if (name.isNotBlank()) { vm.addSection(name, asList); addSection = false } }) { Text("Создать") }
+            },
+            dismissButton = { TextButton(onClick = { addSection = false }) { Text("Отмена") } },
+        )
     }
     if (renaming && current != null) {
         TextPromptDialog(
@@ -277,4 +311,81 @@ private fun AddVerseDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } },
     )
+}
+
+
+/** Простой нумерованный список (молитвенные нужды и т.п.): 1, 2, 3… */
+@Composable
+private fun NumberedList(vm: AppViewModel, section: SectionEntity, entries: List<EntryEntity>, modifier: Modifier) {
+    val pal = LocalPalette.current
+    val items = remember(entries) { entries.sortedBy { it.createdAt } }
+    var draft by remember(section.id) { mutableStateOf("") }
+    var editing by remember { mutableStateOf<EntryEntity?>(null) }
+
+    fun add() {
+        if (draft.isNotBlank()) {
+            vm.addListItem(section.id, draft)
+            draft = ""
+        }
+    }
+
+    Column(modifier.fillMaxWidth()) {
+        LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(vertical = 8.dp)) {
+            if (items.isEmpty()) {
+                item {
+                    Text(
+                        "Пока пусто. Впишите первый пункт внизу и нажмите «Готово».",
+                        color = pal.muted, modifier = Modifier.padding(24.dp),
+                    )
+                }
+            }
+            itemsIndexed(items, key = { _, e -> e.id }) { i, e ->
+                Row(
+                    Modifier.fillMaxWidth().clickable { editing = e }.padding(start = 20.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    Text(
+                        "${i + 1}.", color = pal.verseNum, fontWeight = FontWeight.Bold, fontSize = 18.sp,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Serif,
+                        modifier = Modifier.width(36.dp),
+                    )
+                    Text(
+                        e.title.ifBlank { "Без названия" },
+                        color = if (e.done) pal.muted else pal.text, fontSize = 18.sp,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Serif,
+                        textDecoration = if (e.done) androidx.compose.ui.text.style.TextDecoration.LineThrough else null,
+                        modifier = Modifier.weight(1f).padding(top = 1.dp),
+                    )
+                    IconButton(onClick = { vm.toggleDone(e) }) {
+                        Icon(Icons.Default.Check, "Отвечено", tint = if (e.done) pal.verseNum else pal.line)
+                    }
+                    IconButton(onClick = { vm.deleteEntry(e.id) }) {
+                        Icon(Icons.Default.Close, "Удалить", tint = pal.muted)
+                    }
+                }
+                Box(Modifier.fillMaxWidth().padding(start = 56.dp).height(1.dp).background(pal.line))
+            }
+        }
+        Row(
+            Modifier.fillMaxWidth().background(pal.card).padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            OutlinedTextField(
+                value = draft, onValueChange = { draft = it },
+                placeholder = { Text("Новый пункт №${items.size + 1}") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { add() }),
+                modifier = Modifier.weight(1f),
+            )
+            IconButton(onClick = { add() }) { Icon(Icons.Default.Add, "Добавить", tint = pal.heading) }
+        }
+    }
+
+    editing?.let { e ->
+        TextPromptDialog(
+            "Изменить пункт", initial = e.title, label = "Текст", singleLine = false,
+            onOk = { vm.editListItem(e.id, it); editing = null }, onDismiss = { editing = null },
+        )
+    }
 }

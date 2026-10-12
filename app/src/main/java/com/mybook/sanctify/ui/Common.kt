@@ -94,6 +94,7 @@ fun TextPromptDialog(
     title: String,
     initial: String = "",
     label: String = "",
+    singleLine: Boolean = true,
     onOk: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -104,7 +105,7 @@ fun TextPromptDialog(
         text = {
             OutlinedTextField(
                 value = text, onValueChange = { text = it }, label = { Text(label) },
-                singleLine = true, modifier = Modifier.fillMaxWidth(),
+                singleLine = singleLine, modifier = Modifier.fillMaxWidth(),
             )
         },
         confirmButton = {

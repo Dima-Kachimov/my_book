@@ -128,6 +128,12 @@ interface AppDao {
     @Update
     suspend fun updateEntry(e: EntryEntity)
 
+    @Query("UPDATE entries SET done = :done WHERE id = :id")
+    suspend fun setDone(id: Long, done: Boolean)
+
+    @Query("UPDATE entries SET title = :title, updatedAt = :now WHERE id = :id")
+    suspend fun updateTitle(id: Long, title: String, now: Long)
+
     @Query("DELETE FROM entries WHERE id = :id")
     suspend fun deleteEntry(id: Long)
 

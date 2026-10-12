@@ -284,10 +284,24 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
         .flatMapLatest { id -> if (id == null) flowOf(emptyList()) else dao.entries(id) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
-    fun addSection(name: String) = viewModelScope.launch {
-        val id = dao.insertSection(SectionEntity(name = name.trim(), sortOrder = sections.value.size))
+    fun addSection(name: String, isList: Boolean = false) = viewModelScope.launch {
+        val id = dao.insertSection(SectionEntity(name = name.trim(), sortOrder = sections.value.size, isList = isList))
         selectedSection.value = id
     }
+
+    fun setSectionList(s: SectionEntity, isList: Boolean) =
+        viewModelScope.launch { dao.updateSection(s.copy(isList = isList)) }
+
+    // Пункты нумерованного списка — это записи раздела: заголовок = текст пункта.
+    fun addListItem(sectionId: Long, text: String) = viewModelScope.launch {
+        val now = System.currentTimeMillis()
+        dao.insertEntry(EntryEntity(sectionId = sectionId, title = text.trim(), body = "", createdAt = now, updatedAt = now))
+    }
+
+    fun editListItem(id: Long, text: String) =
+        viewModelScope.launch { dao.updateTitle(id, text.trim(), System.currentTimeMillis()) }
+
+    fun toggleDone(e: EntryEntity) = viewModelScope.launch { dao.setDone(e.id, !e.done) }
 
     fun renameSection(s: SectionEntity, name: String) =
         viewModelScope.launch { dao.updateSection(s.copy(name = name.trim())) }

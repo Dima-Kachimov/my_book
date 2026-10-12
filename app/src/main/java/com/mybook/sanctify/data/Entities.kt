@@ -73,6 +73,8 @@ data class SectionEntity(
     val name: String,
     val isDefault: Boolean = false,
     val sortOrder: Int = 0,
+    /** true — раздел показывается как простой нумерованный список (1, 2, 3…), например молитвенные нужды. */
+    val isList: Boolean = false,
 )
 
 @Serializable
@@ -93,6 +95,8 @@ data class EntryEntity(
     val body: String,
     val createdAt: Long,
     val updatedAt: Long,
+    /** Отметка «выполнено/отвечено» для пунктов списка. */
+    val done: Boolean = false,
 )
 
 /** Стих(и), прикреплённые к записи дневника. text — снимок текста на момент добавления. */
