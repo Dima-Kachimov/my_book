@@ -1,0 +1,7 @@
+<resources>
+    <style name="Theme.Diary" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@android:color/white</item>
+        <item name="android:statusBarColor">#FF3B3B3B</item>
+        <item name="android:navigationBarColor">#FF3B3B3B</item>
+    </style>
+</resources>
