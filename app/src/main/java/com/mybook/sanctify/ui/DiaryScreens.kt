@@ -50,12 +50,12 @@ fun DiaryScreen(vm: AppViewModel, nav: NavController) {
         Column(Modifier.fillMaxSize()) {
             ScreenHeader("Дневник") {
                 IconButton(onClick = { addSection = true }) {
-                    Icon(Icons.Default.Add, "Новый раздел", tint = Color.White)
+                    Icon(Icons.Default.Add, "Новый раздел", tint = pal.text)
                 }
                 if (current != null) {
                     Box {
                         IconButton(onClick = { menu = true }) {
-                            Icon(Icons.Default.MoreVert, "Раздел", tint = Color.White)
+                            Icon(Icons.Default.MoreVert, "Раздел", tint = pal.text)
                         }
                         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                             DropdownMenuItem(text = { Text("Переименовать раздел") }, onClick = { menu = false; renaming = true })
@@ -90,7 +90,8 @@ fun DiaryScreen(vm: AppViewModel, nav: NavController) {
                         ClickableCard(onClick = { nav.navigate("entry/${e.id}") }) {
                             Text(
                                 e.title.ifBlank { "Без названия" }, color = pal.text,
-                                fontWeight = FontWeight.Bold, fontSize = 17.sp,
+                                fontWeight = FontWeight.Bold, fontSize = 18.sp,
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Serif,
                             )
                             if (e.body.isNotBlank()) {
                                 Text(e.body, color = pal.text, maxLines = 3, modifier = Modifier.padding(top = 4.dp))
@@ -109,6 +110,9 @@ fun DiaryScreen(vm: AppViewModel, nav: NavController) {
         if (current != null) {
             FloatingActionButton(
                 onClick = { scope.launch { nav.navigate("entry/${vm.createEntry(current.id)}") } },
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(22.dp),
                 modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
             ) { Icon(Icons.Default.Add, "Новая запись") }
         }
@@ -163,7 +167,7 @@ fun EntryScreen(vm: AppViewModel, nav: NavController, id: Long) {
 
     Column(Modifier.fillMaxSize().background(pal.bg)) {
         ScreenHeader("Запись", onBack = { nav.popBackStack() }) {
-            IconButton(onClick = { confirmDelete = true }) { Icon(Icons.Default.Delete, "Удалить", tint = Color.White) }
+            IconButton(onClick = { confirmDelete = true }) { Icon(Icons.Default.Delete, "Удалить", tint = pal.text) }
         }
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(12.dp)) {
             OutlinedTextField(

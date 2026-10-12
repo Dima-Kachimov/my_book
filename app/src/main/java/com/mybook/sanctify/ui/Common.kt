@@ -13,10 +13,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.BaselineShift
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.mybook.sanctify.data.HighlightEntity
@@ -33,7 +36,15 @@ fun styledVerse(
     trId: String,
     pal: ReaderPalette,
 ): AnnotatedString = buildAnnotatedString {
-    if (num != null) withStyle(SpanStyle(color = pal.verseNum, fontWeight = FontWeight.Bold)) { append("$num ") }
+    if (num != null) {
+        withStyle(
+            SpanStyle(
+                color = pal.verseNum, fontWeight = FontWeight.Bold, fontSize = 0.65.em,
+                fontFamily = FontFamily.SansSerif, baselineShift = BaselineShift.Superscript,
+            )
+        ) { append("$num") }
+        append(" ")
+    }
     val base = length
     append(text)
     for (h in hls) {
@@ -58,22 +69,23 @@ fun ScreenHeader(
     actions: @Composable RowScope.() -> Unit = {},
 ) {
     val pal = LocalPalette.current
-    Row(
-        Modifier.fillMaxWidth().height(52.dp).background(pal.topBar),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (onBack != null) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад", tint = Color.White)
+    Column(Modifier.fillMaxWidth().background(pal.bg)) {
+        Row(Modifier.fillMaxWidth().height(60.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (onBack != null) {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад", tint = pal.text)
+                }
+            } else {
+                Spacer(Modifier.width(22.dp))
             }
-        } else {
-            Spacer(Modifier.width(16.dp))
+            Text(
+                title, color = pal.text, fontFamily = FontFamily.Serif, fontSize = 24.sp,
+                modifier = Modifier.weight(1f), maxLines = 1,
+            )
+            CompositionLocalProvider(androidx.compose.material3.LocalContentColor provides pal.text) { actions() }
+            Spacer(Modifier.width(8.dp))
         }
-        Text(
-            title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp,
-            modifier = Modifier.weight(1f), maxLines = 1,
-        )
-        actions()
+        Box(Modifier.fillMaxWidth().height(1.dp).background(pal.line))
     }
 }
 
@@ -119,11 +131,14 @@ fun NavController.openReader() {
 
 @Composable
 fun ClickableCard(onClick: () -> Unit, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+    val pal = LocalPalette.current
     Surface(
-        color = LocalPalette.current.card,
-        shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
-        modifier = modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp).clickable(onClick = onClick),
+        color = pal.card,
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
+        shadowElevation = if (pal.dark) 0.dp else 2.dp,
+        border = if (pal.dark) androidx.compose.foundation.BorderStroke(1.dp, pal.line) else null,
+        modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp).clickable(onClick = onClick),
     ) {
-        Column(Modifier.padding(12.dp), content = content)
+        Column(Modifier.padding(16.dp), content = content)
     }
 }

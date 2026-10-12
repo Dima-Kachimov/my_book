@@ -38,7 +38,7 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
 
     // ---------- Настройки ----------
     var themeMode by mutableStateOf(
-        ThemeMode.values().getOrElse(prefs.getInt("theme", 0)) { ThemeMode.PARCHMENT }
+        ThemeMode.values().getOrElse(prefs.getInt("theme", 0)) { ThemeMode.PAPER }
     )
         private set
     var fontSize by mutableFloatStateOf(prefs.getFloat("font", 20f))

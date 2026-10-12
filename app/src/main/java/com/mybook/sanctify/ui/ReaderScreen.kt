@@ -19,6 +19,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -81,15 +83,8 @@ fun ReaderScreen(vm: AppViewModel, nav: NavController) {
                 val bookmarked = remember(bookmarks) { bookmarks.map { it.verse }.toSet() }
                 LazyColumn(
                     state = listState,
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+                    contentPadding = PaddingValues(horizontal = 18.dp, vertical = 14.dp),
                 ) {
-                    item {
-                        Text(
-                            "${Books.name(pos.book)} ${pos.chapter}",
-                            color = pal.heading, fontWeight = FontWeight.Bold, fontSize = 22.sp,
-                            modifier = Modifier.padding(bottom = 6.dp),
-                        )
-                    }
                     if (verses.isEmpty()) {
                         item {
                             Text(
@@ -127,7 +122,8 @@ fun ReaderScreen(vm: AppViewModel, nav: NavController) {
         }
         if (selected.isNotEmpty()) {
             SelectionBar(
-                count = selected.size,
+                ref = refText(pos.book, pos.chapter, selected.min(), selected.max()),
+                preview = verses.filter { it.verse in selected }.joinToString(" ") { it.text },
                 onColor = { c -> vm.highlight(selected, c, false); selected = emptySet() },
                 onUnderline = { vm.highlight(selected, UNDERLINE_COLOR, true); selected = emptySet() },
                 onClear = { vm.clearHighlights(selected); selected = emptySet() },
@@ -219,47 +215,65 @@ private fun ReaderTopBar(
     val pal = LocalPalette.current
     var trMenu by remember { mutableStateOf(false) }
     var moreMenu by remember { mutableStateOf(false) }
-    Row(
-        Modifier.fillMaxWidth().height(52.dp).background(pal.topBar),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box {
-            TextButton(onClick = { trMenu = true }) {
-                Text(trId.uppercase().take(6).ifBlank { "—" }, color = Color.White, fontWeight = FontWeight.Bold)
-            }
-            DropdownMenu(expanded = trMenu, onDismissRequest = { trMenu = false }) {
-                translations.forEach { t ->
-                    DropdownMenuItem(
-                        text = { Text(t.name) },
-                        onClick = { vm.setTranslation(t.id); trMenu = false },
-                    )
-                }
-                DropdownMenuItem(
-                    text = { Text("Скачать другие…") },
-                    onClick = { trMenu = false; nav.navigate("translations") },
+    Column(Modifier.fillMaxWidth().background(pal.bg)) {
+        Row(
+            Modifier.fillMaxWidth().padding(start = 22.dp, end = 8.dp, top = 8.dp, bottom = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f).clickable { nav.navigate("picker") }) {
+                Text(
+                    Books.name(pos.book).uppercase(), color = pal.muted, fontSize = 12.sp,
+                    letterSpacing = 1.sp, maxLines = 1,
+                )
+                Text(
+                    "Глава ${pos.chapter}", color = pal.text, fontFamily = FontFamily.Serif,
+                    fontSize = 30.sp, maxLines = 1,
                 )
             }
-        }
-        TextButton(onClick = { nav.navigate("picker") }, modifier = Modifier.weight(1f)) {
-            Text("${Books.short(pos.book)} ${pos.chapter}", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-        }
-        BarIcon(Icons.Default.Search, "Поиск", true) { nav.navigate("search") }
-        BarIcon(Icons.AutoMirrored.Filled.ArrowBack, "Назад", vm.canBack) { vm.goBack() }
-        BarIcon(Icons.AutoMirrored.Filled.ArrowForward, "Вперёд", vm.canForward) { vm.goForward() }
-        Box {
-            BarIcon(Icons.Default.MoreVert, "Меню", true) { moreMenu = true }
-            DropdownMenu(expanded = moreMenu, onDismissRequest = { moreMenu = false }) {
-                DropdownMenuItem(text = { Text("Переводы") }, onClick = { moreMenu = false; nav.navigate("translations") })
-                DropdownMenuItem(text = { Text("Настройки") }, onClick = { moreMenu = false; nav.navigate("settings") })
+            Box {
+                Surface(
+                    color = pal.soft, shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.clickable { trMenu = true },
+                ) {
+                    Text(
+                        trId.uppercase().take(6).ifBlank { "—" } + " ▾", color = pal.heading,
+                        fontWeight = FontWeight.Bold, fontSize = 13.sp,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                    )
+                }
+                DropdownMenu(expanded = trMenu, onDismissRequest = { trMenu = false }) {
+                    translations.forEach { t ->
+                        DropdownMenuItem(
+                            text = { Text(t.name) },
+                            onClick = { vm.setTranslation(t.id); trMenu = false },
+                        )
+                    }
+                    DropdownMenuItem(
+                        text = { Text("Скачать другие…") },
+                        onClick = { trMenu = false; nav.navigate("translations") },
+                    )
+                }
+            }
+            IconButton(onClick = { nav.navigate("search") }) {
+                Icon(Icons.Default.Search, "Поиск", tint = pal.text)
+            }
+            Box {
+                IconButton(onClick = { moreMenu = true }) { Icon(Icons.Default.MoreVert, "Меню", tint = pal.text) }
+                DropdownMenu(expanded = moreMenu, onDismissRequest = { moreMenu = false }) {
+                    DropdownMenuItem(
+                        text = { Text("← Назад по истории") }, enabled = vm.canBack,
+                        onClick = { moreMenu = false; vm.goBack() },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Вперёд по истории →") }, enabled = vm.canForward,
+                        onClick = { moreMenu = false; vm.goForward() },
+                    )
+                    DropdownMenuItem(text = { Text("Переводы") }, onClick = { moreMenu = false; nav.navigate("translations") })
+                    DropdownMenuItem(text = { Text("Настройки") }, onClick = { moreMenu = false; nav.navigate("settings") })
+                }
             }
         }
-    }
-}
-
-@Composable
-private fun BarIcon(icon: ImageVector, desc: String, enabled: Boolean, onClick: () -> Unit) {
-    IconButton(onClick = onClick, enabled = enabled) {
-        Icon(icon, contentDescription = desc, tint = if (enabled) Color.White else Color(0xFF777777))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(pal.line))
     }
 }
 
@@ -296,40 +310,47 @@ private fun VerseRow(
     val annotated = remember(v, hls, trId, pal) { styledVerse(v.verse, v.text, hls, trId, pal) }
     Column(
         Modifier.fillMaxWidth()
+            .padding(bottom = 10.dp)
+            .clip(RoundedCornerShape(10.dp))
             .background(if (selected) pal.verseNum.copy(alpha = 0.18f) else Color.Transparent)
             .clickable(onClick = onClick)
-            .padding(vertical = 3.dp),
+            .padding(horizontal = 4.dp, vertical = 2.dp),
     ) {
         Row(verticalAlignment = Alignment.Top) {
             Text(
-                annotated, color = pal.text, fontSize = fontSize.sp, lineHeight = (fontSize * 1.4f).sp,
-                modifier = Modifier.weight(1f),
+                annotated, color = pal.text, fontSize = fontSize.sp, lineHeight = (fontSize * 1.55f).sp,
+                fontFamily = FontFamily.Serif, modifier = Modifier.weight(1f),
             )
             if (bookmarked) {
-                Icon(Icons.Default.Bookmark, "Закладка", tint = pal.heading, modifier = Modifier.size(20.dp))
+                Icon(Icons.Default.Bookmark, "Закладка", tint = pal.verseNum, modifier = Modifier.size(20.dp))
             }
         }
         notes.forEach { n ->
-            Surface(
-                color = pal.card, shape = RoundedCornerShape(8.dp),
-                modifier = Modifier.padding(start = 18.dp, top = 3.dp, bottom = 3.dp).clickable { onNoteClick(n) },
+            Row(
+                Modifier.padding(start = 4.dp, top = 6.dp, bottom = 4.dp)
+                    .clip(RoundedCornerShape(topStart = 6.dp, bottomStart = 6.dp, topEnd = 14.dp, bottomEnd = 14.dp))
+                    .background(pal.soft)
+                    .height(IntrinsicSize.Min)
+                    .clickable { onNoteClick(n) },
             ) {
-                Row(Modifier.padding(8.dp), verticalAlignment = Alignment.Top) {
-                    Icon(Icons.Default.EditNote, null, tint = pal.verseNum, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        (if (n.verseStart != n.verseEnd) "${n.verseStart}–${n.verseEnd}: " else "") + n.text,
-                        color = pal.text, fontSize = (fontSize * 0.8f).sp,
-                    )
-                }
+                Box(Modifier.width(4.dp).fillMaxHeight().background(pal.verseNum))
+                Text(
+                    (if (n.verseStart != n.verseEnd) "${n.verseStart}–${n.verseEnd}: " else "") + n.text,
+                    color = pal.text, fontSize = (fontSize * 0.78f).sp,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                )
             }
         }
     }
 }
 
+private class Tile(val icon: ImageVector, val label: String, val onClick: () -> Unit)
+
+/** Панель действий над выбранными стихами (нижний «лист»). */
 @Composable
 private fun SelectionBar(
-    count: Int,
+    ref: String,
+    preview: String,
     onColor: (Int) -> Unit,
     onUnderline: () -> Unit,
     onClear: () -> Unit,
@@ -341,38 +362,56 @@ private fun SelectionBar(
     onClose: () -> Unit,
 ) {
     val pal = LocalPalette.current
-    Column(Modifier.fillMaxWidth().background(pal.topBar).padding(horizontal = 8.dp, vertical = 6.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Выбрано: $count", color = Color.White, fontSize = 13.sp, modifier = Modifier.padding(end = 10.dp))
+    val shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+    val tiles = listOfNotNull(
+        Tile(Icons.Default.EditNote, "Заметка", onNote),
+        Tile(Icons.Default.Bookmark, "Закладка", onBookmark),
+        Tile(Icons.Default.FormatUnderlined, "Подчерк.", onUnderline),
+        onFragment?.let { Tile(Icons.Default.SelectAll, "Фрагмент", it) },
+        Tile(Icons.Default.MenuBook, "В дневник", onDiary),
+        Tile(Icons.Default.ContentCopy, "Копия", onCopy),
+        Tile(Icons.Default.FormatColorReset, "Снять", onClear),
+        Tile(Icons.Default.Close, "Отмена", onClose),
+    )
+    Column(
+        Modifier.fillMaxWidth().shadow(12.dp, shape).background(pal.card, shape)
+            .padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 14.dp),
+    ) {
+        Box(
+            Modifier.align(Alignment.CenterHorizontally).width(44.dp).height(5.dp)
+                .clip(RoundedCornerShape(3.dp)).background(pal.line),
+        )
+        Spacer(Modifier.height(12.dp))
+        Text(ref.uppercase(), color = pal.muted, fontSize = 12.sp, letterSpacing = 1.sp)
+        Text(
+            preview, color = pal.text, fontFamily = FontFamily.Serif, fontSize = 15.sp,
+            maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            modifier = Modifier.padding(top = 2.dp),
+        )
+        Row(Modifier.padding(vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             HL_COLORS.forEach { c ->
-                Box(
-                    Modifier.padding(horizontal = 4.dp).size(30.dp).clip(CircleShape)
-                        .background(Color(c)).clickable { onColor(c) },
-                )
+                Box(Modifier.size(36.dp).clip(CircleShape).background(Color(c)).clickable { onColor(c) })
             }
-            Spacer(Modifier.weight(1f))
-            ActionIcon(Icons.Default.FormatUnderlined, "Подчерк.", onUnderline)
-            ActionIcon(Icons.Default.FormatColorReset, "Снять", onClear)
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-            ActionIcon(Icons.Default.EditNote, "Заметка", onNote)
-            ActionIcon(Icons.Default.Bookmark, "Закладка", onBookmark)
-            ActionIcon(Icons.Default.ContentCopy, "Копия", onCopy)
-            ActionIcon(Icons.Default.MenuBook, "Дневник", onDiary)
-            if (onFragment != null) ActionIcon(Icons.Default.SelectAll, "Фрагмент", onFragment)
-            ActionIcon(Icons.Default.Close, "Отмена", onClose)
+        tiles.chunked(4).forEach { rowTiles ->
+            Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                rowTiles.forEach { t -> ActionTile(t, Modifier.weight(1f)) }
+                repeat(4 - rowTiles.size) { Spacer(Modifier.weight(1f)) }
+            }
         }
     }
 }
 
 @Composable
-private fun ActionIcon(icon: ImageVector, label: String, onClick: () -> Unit) {
+private fun ActionTile(t: Tile, modifier: Modifier) {
+    val pal = LocalPalette.current
     Column(
-        Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onClick).padding(horizontal = 8.dp, vertical = 4.dp),
+        modifier.clip(RoundedCornerShape(16.dp)).background(pal.soft).clickable(onClick = t.onClick)
+            .padding(vertical = 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Icon(icon, label, tint = Color.White, modifier = Modifier.size(24.dp))
-        Text(label, color = Color.White, fontSize = 10.sp)
+        Icon(t.icon, t.label, tint = pal.heading, modifier = Modifier.size(24.dp))
+        Text(t.label, color = pal.text, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
     }
 }
 
