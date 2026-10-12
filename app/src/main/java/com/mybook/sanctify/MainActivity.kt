@@ -40,28 +40,14 @@ class MainActivity : ComponentActivity() {
                 val nav = rememberNavController()
                 val entry by nav.currentBackStackEntryAsState()
                 val route = entry?.destination?.route
-                val tabs = listOf(
-                    Triple("reader", "Библия", Icons.Default.MenuBook),
-                    Triple("diary", "Дневник", Icons.Default.EditNote),
-                    Triple("marks", "Пометки", Icons.Default.Bookmark),
-                )
                 Scaffold(
                     bottomBar = {
-                        if (tabs.any { it.first == route }) {
-                            NavigationBar {
-                                tabs.forEach { (r, label, icon) ->
-                                    NavigationBarItem(
-                                        selected = route == r,
-                                        onClick = {
-                                            nav.navigate(r) {
-                                                popUpTo("reader") { saveState = true }
-                                                launchSingleTop = true
-                                                restoreState = true
-                                            }
-                                        },
-                                        icon = { Icon(icon, label) },
-                                        label = { Text(label) },
-                                    )
+                        if (route in bottomBarRoutes) {
+                            AppBottomBar(route) { r ->
+                                nav.navigate(r) {
+                                    popUpTo("reader") { saveState = true }
+                                    launchSingleTop = true
+                                    restoreState = true
                                 }
                             }
                         }

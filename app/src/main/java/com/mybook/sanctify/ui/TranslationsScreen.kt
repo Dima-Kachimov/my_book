@@ -31,10 +31,15 @@ fun TranslationsScreen(vm: AppViewModel, nav: NavController) {
     val current by vm.trId.collectAsStateWithLifecycle()
     var filter by remember { mutableStateOf("ru") }
     var query by remember { mutableStateOf("") }
+    var urlDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) { if (catalog !is CatalogState.Ready) vm.loadCatalog() }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) vm.importFile(uri)
+    }
+
+    if (urlDialog) {
+        UrlImportDialog(onOk = { vm.importUrl(it); urlDialog = false }, onDismiss = { urlDialog = false })
     }
 
     Column(Modifier.fillMaxSize().background(pal.bg)) {
@@ -59,9 +64,12 @@ fun TranslationsScreen(vm: AppViewModel, nav: NavController) {
             }
             item {
                 Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                    OutlinedButton(onClick = { picker.launch(arrayOf("*/*")) }) { Text("Импорт из файла") }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { picker.launch(arrayOf("*/*")) }) { Text("Из файла") }
+                        OutlinedButton(onClick = { urlDialog = true }) { Text("По ссылке") }
+                    }
                     Text(
-                        "Поддерживаются модули MySword (.mybible), JSON getBible и JSON-строки. Так можно добавить любой свой перевод, например Турконяка.",
+                        "Поддерживаются модули MySword (.mybible), JSON getBible и JSON-строки (один стих — одна строка). Так можно добавить скачанную из интернета Библию, например Турконяка. Ссылка должна вести прямо на файл.",
                         color = pal.muted, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp),
                     )
                 }
@@ -110,6 +118,11 @@ fun TranslationsScreen(vm: AppViewModel, nav: NavController) {
             }
         }
     }
+}
+
+@Composable
+private fun UrlImportDialog(onOk: (String) -> Unit, onDismiss: () -> Unit) {
+    TextPromptDialog("Загрузить Библию по ссылке", label = "https://…", onOk = onOk, onDismiss = onDismiss)
 }
 
 @Composable

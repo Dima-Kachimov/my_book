@@ -122,6 +122,43 @@ data class EntryVerseEntity(
     val text: String,
 )
 
+/** Цвета тегов (ARGB). */
+val TAG_COLORS: List<Int> =
+    listOf(0xFFE57373, 0xFFFFB74D, 0xFFFFD54F, 0xFF81C784, 0xFF64B5F6, 0xFFBA68C8, 0xFF4DB6AC, 0xFFF06292)
+        .map { it.toInt() }
+
+/** Теги по умолчанию (создаются при установке). */
+val DEFAULT_TAGS = listOf("Любовь", "Обетование", "Заповедь", "Молитва", "Вера", "Надежда")
+
+/** Тег для стихов: «любовь», «обетование», «заповедь»… */
+@Serializable
+@Entity(tableName = "tags")
+data class TagEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val color: Int,
+)
+
+/** Привязка тега к стиху (не зависит от перевода). */
+@Serializable
+@Entity(
+    tableName = "verse_tags",
+    foreignKeys = [ForeignKey(
+        entity = TagEntity::class,
+        parentColumns = ["id"],
+        childColumns = ["tagId"],
+        onDelete = ForeignKey.CASCADE,
+    )],
+    indices = [Index(value = ["tagId", "book", "chapter", "verse"], unique = true), Index(value = ["book", "chapter"])],
+)
+data class VerseTagEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val tagId: Long,
+    val book: Int,
+    val chapter: Int,
+    val verse: Int,
+)
+
 @Serializable
 data class Backup(
     val version: Int = 1,
@@ -131,4 +168,6 @@ data class Backup(
     val highlights: List<HighlightEntity>,
     val notes: List<NoteEntity>,
     val bookmarks: List<BookmarkEntity>,
+    val tags: List<TagEntity> = emptyList(),
+    val verseTags: List<VerseTagEntity> = emptyList(),
 )

@@ -3,6 +3,14 @@ package com.mybook.sanctify.ui
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.em
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -53,6 +61,10 @@ fun ReaderScreen(vm: AppViewModel, nav: NavController) {
     val notes by vm.notes.collectAsStateWithLifecycle()
     val bookmarks by vm.bookmarks.collectAsStateWithLifecycle()
     val sections by vm.sections.collectAsStateWithLifecycle()
+    val parallelId by vm.parallelId.collectAsStateWithLifecycle()
+    val parallel by vm.parallelVerses.collectAsStateWithLifecycle()
+    val allTags by vm.tags.collectAsStateWithLifecycle()
+    val verseTags by vm.verseTags.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
 
@@ -60,11 +72,13 @@ fun ReaderScreen(vm: AppViewModel, nav: NavController) {
     var noteDraft by remember { mutableStateOf<NoteDraft?>(null) }
     var fragmentVerse by remember { mutableStateOf<VerseEntity?>(null) }
     var showSectionPicker by remember { mutableStateOf(false) }
+    var sheetVerse by remember { mutableStateOf<VerseEntity?>(null) }
+    var showTags by remember { mutableStateOf(false) }
 
     BackHandler(enabled = selected.isNotEmpty()) { selected = emptySet() }
 
     Column(Modifier.fillMaxSize().background(pal.bg)) {
-        ReaderTopBar(vm, nav, translations, trId, pos)
+        ReaderTopBar(vm, nav, translations, trId, pos, parallelId)
         Box(Modifier.weight(1f)) {
             if (translations.isEmpty()) {
                 EmptyBible(nav)
@@ -106,6 +120,11 @@ fun ReaderScreen(vm: AppViewModel, nav: NavController) {
                             lineSpacing = vm.lineSpacing,
                             justify = vm.justify,
                             bold = vm.boldText,
+                            parallelText = parallel.firstOrNull { it.verse == v.verse }?.text,
+                            parallelId = parallelId,
+                            tags = verseTags.filter { it.verse == v.verse }
+                                .mapNotNull { vt -> allTags.firstOrNull { it.id == vt.tagId } },
+                            onSwipeLeft = { sheetVerse = v },
                             onClick = {
                                 selected = if (v.verse in selected) selected - v.verse else selected + v.verse
                             },
@@ -147,6 +166,7 @@ fun ReaderScreen(vm: AppViewModel, nav: NavController) {
                     selected = emptySet()
                 },
                 onDiary = { showSectionPicker = true },
+                onTags = { showTags = true },
                 onFragment = if (selected.size == 1) {
                     { fragmentVerse = verses.firstOrNull { it.verse == selected.first() } }
                 } else null,
@@ -179,6 +199,19 @@ fun ReaderScreen(vm: AppViewModel, nav: NavController) {
             },
             onDismiss = { fragmentVerse = null },
         )
+    }
+
+    sheetVerse?.let { v ->
+        VerseSheet(
+            vm = vm, pos = pos, verse = v, currentTr = trId,
+            bookmarked = bookmarks.any { it.verse == v.verse },
+            note = notes.firstOrNull { it.verseStart == v.verse && it.verseEnd == v.verse },
+            onClose = { sheetVerse = null },
+        )
+    }
+
+    if (showTags && selected.isNotEmpty()) {
+        TagDialog(vm, allTags, verseTags, selected) { showTags = false }
     }
 
     if (showSectionPicker) {
@@ -215,8 +248,10 @@ private fun ReaderTopBar(
     translations: List<TranslationEntity>,
     trId: String,
     pos: Pos,
+    parallelId: String,
 ) {
     val pal = LocalPalette.current
+    var parallelDialog by remember { mutableStateOf(false) }
     var trMenu by remember { mutableStateOf(false) }
     var moreMenu by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth().background(pal.bg)) {
@@ -272,12 +307,41 @@ private fun ReaderTopBar(
                         text = { Text("Вперёд по истории →") }, enabled = vm.canForward,
                         onClick = { moreMenu = false; vm.goForward() },
                     )
+                    DropdownMenuItem(
+                        text = { Text("Параллельный перевод" + if (parallelId.isNotBlank()) ": ${parallelId.uppercase()}" else "") },
+                        onClick = { moreMenu = false; parallelDialog = true },
+                    )
                     DropdownMenuItem(text = { Text("Переводы") }, onClick = { moreMenu = false; nav.navigate("translations") })
                     DropdownMenuItem(text = { Text("Настройки") }, onClick = { moreMenu = false; nav.navigate("settings") })
                 }
             }
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(pal.line))
+    }
+    if (parallelDialog) {
+        AlertDialog(
+            onDismissRequest = { parallelDialog = false },
+            title = { Text("Параллельный перевод") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    TextButton(
+                        onClick = { vm.setParallel(""); parallelDialog = false },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text(if (parallelId.isBlank()) "✓ Выключен" else "Выключить", modifier = Modifier.fillMaxWidth()) }
+                    translations.filter { it.id != trId }.forEach { t ->
+                        TextButton(
+                            onClick = { vm.setParallel(t.id); parallelDialog = false },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text((if (t.id == parallelId) "✓ " else "") + t.name, modifier = Modifier.fillMaxWidth()) }
+                    }
+                    if (translations.size < 2) {
+                        Text("Установлен только один перевод. Добавьте ещё в разделе «Переводы».", fontSize = 13.sp)
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { parallelDialog = false }) { Text("Закрыть") } },
+        )
     }
 }
 
@@ -311,9 +375,14 @@ private fun VerseRow(
     lineSpacing: Float,
     justify: Boolean,
     bold: Boolean,
+    parallelText: String?,
+    parallelId: String,
+    tags: List<TagEntity>,
+    onSwipeLeft: () -> Unit,
     onClick: () -> Unit,
     onNoteClick: (NoteEntity) -> Unit,
 ) {
+    val swipe by rememberUpdatedState(onSwipeLeft)
     val pal = LocalPalette.current
     val annotated = remember(v, hls, trId, pal) { styledVerse(v.verse, v.text, hls, trId, pal) }
     Column(
@@ -321,6 +390,15 @@ private fun VerseRow(
             .padding(bottom = 10.dp)
             .clip(RoundedCornerShape(10.dp))
             .background(if (selected) pal.verseNum.copy(alpha = 0.18f) else Color.Transparent)
+            .pointerInput(Unit) {
+                var total = 0f
+                detectHorizontalDragGestures(
+                    onDragStart = { total = 0f },
+                    onDragEnd = { if (total < -80f) swipe() },
+                    onDragCancel = { total = 0f },
+                    onHorizontalDrag = { _, dx -> total += dx },
+                )
+            }
             .clickable(onClick = onClick)
             .padding(horizontal = 4.dp, vertical = 2.dp),
     ) {
@@ -333,6 +411,30 @@ private fun VerseRow(
             )
             if (bookmarked) {
                 Icon(Icons.Default.Bookmark, "Закладка", tint = pal.verseNum, modifier = Modifier.size(20.dp))
+            }
+        }
+        if (parallelText != null) {
+            Text(
+                buildAnnotatedString {
+                    withStyle(SpanStyle(color = pal.verseNum, fontWeight = FontWeight.Bold, fontSize = 0.8.em)) {
+                        append(parallelId.uppercase() + "  ")
+                    }
+                    append(parallelText)
+                },
+                color = pal.muted, fontSize = (fontSize * 0.88f).sp, lineHeight = (fontSize * lineSpacing * 0.88f).sp,
+                fontFamily = fontFamily, modifier = Modifier.padding(start = 4.dp, top = 4.dp),
+            )
+        }
+        if (tags.isNotEmpty()) {
+            Row(Modifier.padding(start = 4.dp, top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                tags.forEach { t ->
+                    Surface(color = Color(t.color).copy(alpha = 0.3f), shape = RoundedCornerShape(10.dp)) {
+                        Text(
+                            t.name, fontSize = 11.sp, color = pal.text,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                        )
+                    }
+                }
             }
         }
         notes.forEach { n ->
@@ -368,6 +470,7 @@ private fun SelectionBar(
     onBookmark: () -> Unit,
     onCopy: () -> Unit,
     onDiary: () -> Unit,
+    onTags: () -> Unit,
     onFragment: (() -> Unit)?,
     onClose: () -> Unit,
 ) {
@@ -379,6 +482,7 @@ private fun SelectionBar(
         Tile(Icons.Default.FormatUnderlined, "Подчерк.", onUnderline),
         onFragment?.let { Tile(Icons.Default.SelectAll, "Фрагмент", it) },
         Tile(Icons.Default.MenuBook, "В дневник", onDiary),
+        Tile(Icons.Default.Sell, "Теги", onTags),
         Tile(Icons.Default.ContentCopy, "Копия", onCopy),
         Tile(Icons.Default.FormatColorReset, "Снять", onClear),
         Tile(Icons.Default.Close, "Отмена", onClose),
@@ -403,10 +507,10 @@ private fun SelectionBar(
                 Box(Modifier.size(36.dp).clip(CircleShape).background(Color(c)).clickable { onColor(c) })
             }
         }
-        tiles.chunked(4).forEach { rowTiles ->
+        tiles.chunked(5).forEach { rowTiles ->
             Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 rowTiles.forEach { t -> ActionTile(t, Modifier.weight(1f)) }
-                repeat(4 - rowTiles.size) { Spacer(Modifier.weight(1f)) }
+                repeat(5 - rowTiles.size) { Spacer(Modifier.weight(1f)) }
             }
         }
     }
@@ -421,7 +525,7 @@ private fun ActionTile(t: Tile, modifier: Modifier) {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Icon(t.icon, t.label, tint = pal.heading, modifier = Modifier.size(24.dp))
-        Text(t.label, color = pal.text, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+        Text(t.label, color = pal.text, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1)
     }
 }
 
@@ -506,5 +610,122 @@ private fun FragmentDialog(
         },
         confirmButton = {},
         dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } },
+    )
+}
+
+
+/** Меню по свайпу влево: другие переводы, закладка, мысль. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun VerseSheet(
+    vm: AppViewModel,
+    pos: Pos,
+    verse: VerseEntity,
+    currentTr: String,
+    bookmarked: Boolean,
+    note: NoteEntity?,
+    onClose: () -> Unit,
+) {
+    val pal = LocalPalette.current
+    var tab by remember { mutableIntStateOf(0) }
+    var text by remember(note?.id) { mutableStateOf(note?.text ?: "") }
+    val others by produceState<List<Pair<TranslationEntity, String?>>>(emptyList(), verse.verse, pos) {
+        value = vm.otherTranslations(pos.book, pos.chapter, verse.verse)
+    }
+    ModalBottomSheet(onDismissRequest = onClose, containerColor = pal.card) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 28.dp)) {
+            Text(
+                refText(pos.book, pos.chapter, verse.verse).uppercase(), color = pal.muted,
+                fontSize = 12.sp, letterSpacing = 1.sp,
+            )
+            Spacer(Modifier.height(8.dp))
+            TabRow(selectedTabIndex = tab, containerColor = pal.card) {
+                listOf("Переводы", "Закладка", "Мысль").forEachIndexed { i, t ->
+                    Tab(selected = tab == i, onClick = { tab = i }, text = { Text(t) })
+                }
+            }
+            Spacer(Modifier.height(14.dp))
+            when (tab) {
+                0 -> {
+                    others.forEach { (t, txt) ->
+                        Text(t.name, color = pal.heading, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text(
+                            txt ?: "— нет этого стиха в переводе —", color = if (txt == null) pal.muted else pal.text,
+                            fontFamily = FontFamily.Serif, fontSize = 17.sp, lineHeight = 25.sp,
+                            modifier = Modifier.padding(top = 2.dp),
+                        )
+                        if (t.id != currentTr && txt != null) {
+                            TextButton(onClick = { vm.setTranslation(t.id); onClose() }) { Text("Читать в этом переводе") }
+                        }
+                        Spacer(Modifier.height(12.dp))
+                    }
+                    if (others.size < 2) {
+                        Text("Добавьте ещё переводы в разделе «Переводы», чтобы сравнивать.", color = pal.muted, fontSize = 13.sp)
+                    }
+                }
+                1 -> {
+                    Text(if (bookmarked) "Этот стих в закладках." else "Этот стих не в закладках.", color = pal.text)
+                    Spacer(Modifier.height(10.dp))
+                    Button(onClick = { vm.toggleBookmark(verse.verse); onClose() }) {
+                        Text(if (bookmarked) "Убрать закладку" else "Добавить в закладки")
+                    }
+                }
+                else -> {
+                    OutlinedTextField(
+                        value = text, onValueChange = { text = it }, label = { Text("Ваши мысли") },
+                        minLines = 3, modifier = Modifier.fillMaxWidth(),
+                    )
+                    Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Button(onClick = {
+                            if (text.isNotBlank()) { vm.saveNote(note, verse.verse, verse.verse, text.trim()); onClose() }
+                        }) { Text("Сохранить") }
+                        if (note != null) {
+                            OutlinedButton(onClick = { vm.deleteNote(note.id); onClose() }) { Text("Удалить") }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Выбор тегов для выделенных стихов; можно создать новый тег. */
+@Composable
+private fun TagDialog(
+    vm: AppViewModel,
+    tags: List<TagEntity>,
+    verseTags: List<VerseTagEntity>,
+    selected: Set<Int>,
+    onClose: () -> Unit,
+) {
+    var newTag by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text("Теги") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                tags.forEach { t ->
+                    val checked = selected.all { v -> verseTags.any { it.tagId == t.id && it.verse == v } }
+                    Row(
+                        Modifier.fillMaxWidth().clickable { vm.toggleTag(t.id, selected) }.padding(vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Checkbox(checked = checked, onCheckedChange = null)
+                        Spacer(Modifier.width(10.dp))
+                        Box(Modifier.size(12.dp).clip(CircleShape).background(Color(t.color)))
+                        Spacer(Modifier.width(8.dp))
+                        Text(t.name)
+                    }
+                }
+                Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = newTag, onValueChange = { newTag = it }, singleLine = true,
+                        placeholder = { Text("Новый тег") }, modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = { vm.addTag(newTag); newTag = "" }) { Text("Добавить") }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onClose) { Text("Готово") } },
     )
 }

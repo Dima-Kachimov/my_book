@@ -216,6 +216,52 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
         hits
     }
 
+    // ---------- Параллельный перевод ----------
+    val parallelId = MutableStateFlow(prefs.getString("parallel", "") ?: "")
+    val parallelVerses = combine(parallelId, pos) { t, p -> t to p }
+        .flatMapLatest { (t, p) -> if (t.isBlank()) flowOf(emptyList()) else dao.chapter(t, p.book, p.chapter) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    fun setParallel(id: String) {
+        parallelId.value = id
+        prefs.edit().putString("parallel", id).apply()
+    }
+
+    /** Текст одного стиха во всех установленных переводах. */
+    suspend fun otherTranslations(book: Int, chapter: Int, verse: Int): List<Pair<TranslationEntity, String?>> =
+        translations.value.map { t -> t to dao.range(t.id, book, chapter, verse, verse).firstOrNull()?.text }
+
+    // ---------- Теги ----------
+    val tags = dao.tags().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val verseTags = pos.flatMapLatest { dao.verseTags(it.book, it.chapter) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val allVerseTags = dao.allVerseTags().stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+    /** Если тег уже стоит на всех выбранных стихах — снимает его, иначе ставит на все. */
+    fun toggleTag(tagId: Long, verses: Set<Int>) = viewModelScope.launch {
+        val p = pos.value
+        val have = verseTags.value.filter { it.tagId == tagId }.map { it.verse }.toSet()
+        if (verses.all { it in have }) {
+            dao.removeVerseTags(tagId, p.book, p.chapter, verses.toList())
+        } else {
+            dao.insertVerseTags(
+                verses.filter { it !in have }.map { VerseTagEntity(tagId = tagId, book = p.book, chapter = p.chapter, verse = it) }
+            )
+        }
+    }
+
+    fun addTag(name: String) = viewModelScope.launch {
+        val n = name.trim()
+        if (n.isNotBlank() && tags.value.none { it.name.equals(n, ignoreCase = true) }) {
+            dao.insertTag(TagEntity(name = n, color = TAG_COLORS[tags.value.size % TAG_COLORS.size]))
+        }
+    }
+
+    fun deleteTag(id: Long) = viewModelScope.launch { dao.deleteTag(id) }
+
+    fun removeVerseTag(tagId: Long, book: Int, chapter: Int, verse: Int) =
+        viewModelScope.launch { dao.removeVerseTags(tagId, book, chapter, listOf(verse)) }
+
     // ---------- Пометки ----------
     fun highlight(verses: Set<Int>, color: Int, underline: Boolean) = viewModelScope.launch {
         val p = pos.value
@@ -391,28 +437,49 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Определяет формат по содержимому: модуль MySword (SQLite), JSON getBible или JSON-строки. */
+    private fun parseBytes(bytes: ByteArray): ParsedBible =
+        if (bytes.size > 15 && String(bytes, 0, 15, Charsets.ISO_8859_1) == "SQLite format 3") {
+            val f = File(app.cacheDir, "import_module.db")
+            f.writeBytes(bytes)
+            try {
+                BibleApi.parseMySword(f.path, null)
+            } finally {
+                f.delete()
+            }
+        } else {
+            BibleApi.parseAuto(bytes.toString(Charsets.UTF_8), null)
+        }
+
     /** Импорт из файла: JSON getBible, JSON-строки или модуль MySword (SQLite). */
     fun importFile(uri: Uri) = viewModelScope.launch {
         try {
             val parsed = withContext(Dispatchers.Default) {
                 val bytes = app.contentResolver.openInputStream(uri)?.use { it.readBytes() }
                     ?: error("Не удалось открыть файл")
-                if (bytes.size > 15 && String(bytes, 0, 15, Charsets.ISO_8859_1) == "SQLite format 3") {
-                    val f = File(app.cacheDir, "import_module.db")
-                    f.writeBytes(bytes)
-                    try {
-                        BibleApi.parseMySword(f.path, null)
-                    } finally {
-                        f.delete()
-                    }
-                } else {
-                    BibleApi.parseAuto(bytes.toString(Charsets.UTF_8), null)
-                }
+                parseBytes(bytes)
             }
             saveTranslation(TranslationEntity(parsed.id, parsed.name, parsed.language), parsed.verses)
             messages.emit("«${parsed.name}» импортирован")
         } catch (e: Exception) {
             messages.emit("Ошибка импорта: ${e.message ?: e.javaClass.simpleName}")
+        }
+    }
+
+    /** Загрузка Библии по прямой ссылке на файл (тот же набор форматов). */
+    fun importUrl(url: String) = viewModelScope.launch {
+        val u = url.trim()
+        if (!u.startsWith("http://") && !u.startsWith("https://")) {
+            messages.emit("Ссылка должна начинаться с http:// или https://")
+            return@launch
+        }
+        messages.emit("Скачиваем…")
+        try {
+            val parsed = withContext(Dispatchers.IO) { parseBytes(BibleApi.fetchBytes(u)) }
+            saveTranslation(TranslationEntity(parsed.id, parsed.name, parsed.language), parsed.verses)
+            messages.emit("«${parsed.name}» установлен")
+        } catch (e: Exception) {
+            messages.emit("Не удалось загрузить: ${e.message ?: e.javaClass.simpleName}")
         }
     }
 
@@ -437,6 +504,7 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
                 sections = dao.listSections(), entries = dao.listEntries(),
                 entryVerses = dao.listEntryVerses(), highlights = dao.listHighlights(),
                 notes = dao.listNotes(), bookmarks = dao.listBookmarks(),
+                tags = dao.listTags(), verseTags = dao.listVerseTags(),
             )
             val text = json.encodeToString(Backup.serializer(), b)
             withContext(Dispatchers.IO) {
@@ -459,8 +527,10 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
             db.withTransaction {
                 dao.clearEntryVerses(); dao.clearEntries(); dao.clearSections()
                 dao.clearAllHighlights(); dao.clearNotes(); dao.clearBookmarks()
+                if (b.tags.isNotEmpty()) { dao.clearVerseTags(); dao.clearTags() }
                 dao.putSections(b.sections); dao.putEntries(b.entries); dao.putEntryVerses(b.entryVerses)
                 dao.putHighlights(b.highlights); dao.putNotes(b.notes); dao.putBookmarks(b.bookmarks)
+                if (b.tags.isNotEmpty()) { dao.putTags(b.tags); dao.putVerseTags(b.verseTags) }
             }
             messages.emit("Данные восстановлены")
         } catch (e: Exception) {

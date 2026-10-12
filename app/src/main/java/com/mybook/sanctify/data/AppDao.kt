@@ -3,6 +3,7 @@ package com.mybook.sanctify.data
 import androidx.room.Dao
 import androidx.room.Delete
 import androidx.room.Insert
+import androidx.room.OnConflictStrategy.Companion.IGNORE
 import androidx.room.OnConflictStrategy.Companion.REPLACE
 import androidx.room.Query
 import androidx.room.Update
@@ -145,6 +146,35 @@ interface AppDao {
 
     @Query("DELETE FROM entry_verses WHERE id = :id")
     suspend fun deleteEntryVerse(id: Long)
+
+    // ---------- Теги ----------
+    @Query("SELECT * FROM tags ORDER BY name")
+    fun tags(): Flow<List<TagEntity>>
+
+    @Insert
+    suspend fun insertTag(t: TagEntity): Long
+
+    @Query("DELETE FROM tags WHERE id = :id")
+    suspend fun deleteTag(id: Long)
+
+    @Query("SELECT * FROM verse_tags WHERE book = :b AND chapter = :c")
+    fun verseTags(b: Int, c: Int): Flow<List<VerseTagEntity>>
+
+    @Query("SELECT * FROM verse_tags ORDER BY book, chapter, verse")
+    fun allVerseTags(): Flow<List<VerseTagEntity>>
+
+    @Insert(onConflict = IGNORE)
+    suspend fun insertVerseTags(l: List<VerseTagEntity>)
+
+    @Query("DELETE FROM verse_tags WHERE tagId = :tagId AND book = :b AND chapter = :c AND verse IN (:verses)")
+    suspend fun removeVerseTags(tagId: Long, b: Int, c: Int, verses: List<Int>)
+
+    @Query("SELECT * FROM tags") suspend fun listTags(): List<TagEntity>
+    @Query("SELECT * FROM verse_tags") suspend fun listVerseTags(): List<VerseTagEntity>
+    @Query("DELETE FROM verse_tags") suspend fun clearVerseTags()
+    @Query("DELETE FROM tags") suspend fun clearTags()
+    @Insert(onConflict = REPLACE) suspend fun putTags(l: List<TagEntity>)
+    @Insert(onConflict = REPLACE) suspend fun putVerseTags(l: List<VerseTagEntity>)
 
     // ---------- Резервная копия ----------
     @Query("SELECT * FROM sections") suspend fun listSections(): List<SectionEntity>

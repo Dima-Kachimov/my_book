@@ -11,8 +11,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
     entities = [
         TranslationEntity::class, VerseEntity::class, HighlightEntity::class, NoteEntity::class,
         BookmarkEntity::class, SectionEntity::class, EntryEntity::class, EntryVerseEntity::class,
+        TagEntity::class, VerseTagEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class AppDb : RoomDatabase() {
@@ -30,11 +31,32 @@ abstract class AppDb : RoomDatabase() {
             }
         }
 
+        private fun seedTags(db: SupportSQLiteDatabase) {
+            DEFAULT_TAGS.forEachIndexed { i, name ->
+                db.execSQL("INSERT INTO tags(name, color) VALUES('$name', ${TAG_COLORS[i % TAG_COLORS.size]})")
+            }
+        }
+
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS `tags` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `color` INTEGER NOT NULL)")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `verse_tags` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`tagId` INTEGER NOT NULL, `book` INTEGER NOT NULL, `chapter` INTEGER NOT NULL, `verse` INTEGER NOT NULL, " +
+                        "FOREIGN KEY(`tagId`) REFERENCES `tags`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )"
+                )
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_verse_tags_tagId_book_chapter_verse` ON `verse_tags` (`tagId`, `book`, `chapter`, `verse`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_verse_tags_book_chapter` ON `verse_tags` (`book`, `chapter`)")
+                seedTags(db)
+            }
+        }
+
         fun build(ctx: Context): AppDb =
             Room.databaseBuilder(ctx, AppDb::class.java, "diary.db")
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .addCallback(object : Callback() {
                     override fun onCreate(db: SupportSQLiteDatabase) {
+                        seedTags(db)
                         DEFAULT_SECTIONS.forEachIndexed { i, (name, isList) ->
                             db.execSQL(
                                 "INSERT INTO sections(name, isDefault, sortOrder, isList) " +

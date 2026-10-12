@@ -27,6 +27,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.mybook.sanctify.*
 import com.mybook.sanctify.data.Books
+import com.mybook.sanctify.data.parseRef
 import com.mybook.sanctify.data.refText
 import kotlinx.coroutines.delay
 
@@ -83,7 +84,7 @@ fun SearchScreen(vm: AppViewModel, nav: NavController) {
         }
         OutlinedTextField(
             value = query, onValueChange = { query = it }, singleLine = true,
-            label = { Text("Слово или фраза") },
+            label = { Text("Слово, фраза или ссылка (Ин 3:16)") },
             leadingIcon = { Icon(Icons.Default.Search, null) },
             trailingIcon = {
                 if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Default.Close, "Очистить") }
@@ -128,6 +129,20 @@ fun SearchScreen(vm: AppViewModel, nav: NavController) {
                         }
                     }
                 }
+            }
+        }
+        val target = remember(query) { parseRef(query) }
+        if (target != null) {
+            ClickableCard(onClick = {
+                vm.goTo(target.book, target.chapter, target.verse)
+                nav.openReader()
+            }) {
+                Text("Перейти к месту", color = pal.muted, fontSize = 12.sp)
+                Text(
+                    Books.name(target.book) + " " + target.chapter + (target.verse?.let { ":$it" } ?: ""),
+                    color = pal.heading, fontWeight = FontWeight.Bold, fontSize = 18.sp,
+                    fontFamily = FontFamily.Serif,
+                )
             }
         }
         if (query.trim().length >= 2) {

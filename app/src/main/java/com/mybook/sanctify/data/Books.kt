@@ -51,3 +51,33 @@ fun verseRanges(verses: Collection<Int>): List<IntRange> {
     out.add(start..prev)
     return out
 }
+
+class RefTarget(val book: Int, val chapter: Int, val verse: Int?)
+
+private fun normKey(s: String) = s.lowercase().replace('ё', 'е').replace(Regex("[\\s.]"), "")
+
+private val bookKeys: List<List<String>> by lazy {
+    (1..Books.COUNT).map { n ->
+        val full = Books.name(n)
+        listOf(full, full.removePrefix("От ").removePrefix("К "), Books.short(n)).map(::normKey).distinct()
+    }
+}
+
+private val refRegex = Regex("^(.*?)\\s*(\\d+)(?:\\s*[:.,\\s]\\s*(\\d+)(?:\\s*[-–—]\\s*\\d+)?)?\\s*$")
+
+/**
+ * Разбирает ссылку вида «Ин 3:16», «1 Кор 13», «Иоанна 3 16», «Быт 1». Возвращает null, если это не ссылка.
+ * Книга определяется по названию, сокращению или началу названия.
+ */
+fun parseRef(input: String): RefTarget? {
+    val m = refRegex.matchEntire(input.trim()) ?: return null
+    val key = normKey(m.groupValues[1])
+    if (key.length < 2) return null
+    val chapter = m.groupValues[2].toIntOrNull() ?: return null
+    if (chapter < 1) return null
+    val verse = m.groupValues[3].toIntOrNull()
+    val exact = bookKeys.indexOfFirst { keys -> key in keys }
+    val idx = if (exact >= 0) exact else bookKeys.indexOfFirst { keys -> keys.any { it.startsWith(key) } }
+    if (idx < 0) return null
+    return RefTarget(idx + 1, chapter, verse)
+}

@@ -33,7 +33,10 @@ object BibleApi {
     private const val BASE = "https://api.getbible.net/v2"
     private val json = Json { ignoreUnknownKeys = true }
 
-    fun fetch(url: String, onProgress: (Float) -> Unit = {}): String {
+    fun fetch(url: String, onProgress: (Float) -> Unit = {}): String =
+        fetchBytes(url, onProgress).toString(Charsets.UTF_8)
+
+    fun fetchBytes(url: String, onProgress: (Float) -> Unit = {}): ByteArray {
         val c = URL(url).openConnection() as HttpURLConnection
         c.connectTimeout = 20_000
         c.readTimeout = 60_000
@@ -52,7 +55,7 @@ object BibleApi {
                     if (total > 0) onProgress((read.toFloat() / total).coerceAtMost(0.95f))
                 }
             }
-            return out.toString("UTF-8")
+            return out.toByteArray()
         } finally {
             c.disconnect()
         }

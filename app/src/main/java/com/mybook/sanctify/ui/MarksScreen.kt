@@ -4,6 +4,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
@@ -26,16 +29,24 @@ fun MarksScreen(vm: AppViewModel, nav: NavController) {
     val notes by vm.allNotes.collectAsStateWithLifecycle()
     val highlights by vm.allHighlights.collectAsStateWithLifecycle()
     val trId by vm.trId.collectAsStateWithLifecycle()
+    val tags by vm.tags.collectAsStateWithLifecycle()
+    val allVerseTags by vm.allVerseTags.collectAsStateWithLifecycle()
+    var selectedTag by remember { mutableStateOf<Long?>(null) }
+    var confirmDeleteTag by remember { mutableStateOf<TagEntity?>(null) }
 
     fun open(book: Int, chapter: Int, verse: Int) {
         vm.goTo(book, chapter, verse)
         nav.openReader()
     }
 
+    confirmDeleteTag?.let { t ->
+        DeleteTagDialog(t, onConfirm = { vm.deleteTag(t.id); selectedTag = null; confirmDeleteTag = null }, onDismiss = { confirmDeleteTag = null })
+    }
+
     Column(Modifier.fillMaxSize().background(pal.bg)) {
         ScreenHeader("Мои пометки")
-        TabRow(selectedTabIndex = tab, containerColor = pal.bg) {
-            listOf("Закладки (${bookmarks.size})", "Заметки (${notes.size})", "Выделения (${highlights.size})")
+        ScrollableTabRow(selectedTabIndex = tab, containerColor = pal.bg, edgePadding = 8.dp) {
+            listOf("Закладки (${bookmarks.size})", "Заметки (${notes.size})", "Выделения (${highlights.size})", "Теги (${tags.size})")
                 .forEachIndexed { i, t -> Tab(selected = tab == i, onClick = { tab = i }, text = { Text(t, maxLines = 1, fontSize = 13.sp) }) }
         }
         LazyColumn(contentPadding = PaddingValues(vertical = 8.dp)) {
@@ -52,6 +63,49 @@ fun MarksScreen(vm: AppViewModel, nav: NavController) {
                         Text(n.text, color = pal.text, fontSize = 16.sp)
                     }
                 }
+                3 -> {
+                    item {
+                        Row(
+                            Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            tags.forEach { t ->
+                                val count = allVerseTags.count { it.tagId == t.id }
+                                FilterChip(
+                                    selected = selectedTag == t.id,
+                                    onClick = { selectedTag = if (selectedTag == t.id) null else t.id },
+                                    label = { Text("${t.name} · $count") },
+                                    leadingIcon = {
+                                        Box(Modifier.size(10.dp).background(Color(t.color), androidx.compose.foundation.shape.CircleShape))
+                                    },
+                                )
+                            }
+                        }
+                    }
+                    val active = tags.firstOrNull { it.id == selectedTag }
+                    if (active == null) {
+                        item {
+                            Text(
+                                "Выберите тег, чтобы увидеть все помеченные им стихи. Теги ставятся в чтении: выделите стих → «Теги».",
+                                color = pal.muted, fontSize = 13.sp, modifier = Modifier.padding(16.dp),
+                            )
+                        }
+                    } else {
+                        item {
+                            TextButton(onClick = { confirmDeleteTag = active }, modifier = Modifier.padding(horizontal = 8.dp)) {
+                                Text("Удалить тег «${active.name}»")
+                            }
+                        }
+                        items(allVerseTags.filter { it.tagId == active.id }, key = { it.id }) { vt ->
+                            ClickableCard(onClick = { open(vt.book, vt.chapter, vt.verse) }) {
+                                MarkHeader(refText(vt.book, vt.chapter, vt.verse)) {
+                                    vm.removeVerseTag(vt.tagId, vt.book, vt.chapter, vt.verse)
+                                }
+                                VersePreview(vm, vt.book, vt.chapter, vt.verse, emptyList(), trId)
+                            }
+                        }
+                    }
+                }
                 else -> items(highlights, key = { it.id }) { h ->
                     ClickableCard(onClick = { open(h.book, h.chapter, h.verse) }) {
                         MarkHeader(refText(h.book, h.chapter, h.verse)) { vm.deleteHighlight(h.id) }
@@ -61,6 +115,17 @@ fun MarksScreen(vm: AppViewModel, nav: NavController) {
             }
         }
     }
+}
+
+@Composable
+private fun DeleteTagDialog(tag: TagEntity, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Удалить тег «${tag.name}»?") },
+        text = { Text("Тег будет снят со всех стихов.") },
+        confirmButton = { TextButton(onClick = onConfirm) { Text("Удалить") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } },
+    )
 }
 
 @Composable

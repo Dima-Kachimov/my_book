@@ -10,7 +10,11 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
+import androidx.compose.ui.text.input.ImeAction
+import com.mybook.sanctify.data.parseRef
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -32,6 +36,22 @@ fun PickerScreen(vm: AppViewModel, nav: NavController) {
         )
         val b = book
         if (b == null) {
+            var jump by remember { mutableStateOf("") }
+            val jumpTarget = parseRef(jump)
+            fun go() {
+                val t = jumpTarget ?: return
+                vm.goTo(t.book, t.chapter, t.verse)
+                nav.popBackStack()
+            }
+            OutlinedTextField(
+                value = jump, onValueChange = { jump = it }, singleLine = true,
+                label = { Text("Перейти к месту: Ин 3:16") },
+                isError = jump.isNotBlank() && jumpTarget == null,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
+                keyboardActions = KeyboardActions(onGo = { go() }),
+                trailingIcon = { if (jumpTarget != null) TextButton(onClick = { go() }) { Text("Открыть") } },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            )
             LazyColumn(Modifier.fillMaxSize()) {
                 item { SectionLabel("Ветхий Завет") }
                 items((1 until Books.NT_START).toList()) { n -> BookRow(n) { book = n } }
