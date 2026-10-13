@@ -14,8 +14,8 @@ android {
         applicationId = "com.mybook.sanctify"
         minSdk = 24
         targetSdk = 34
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3
+        versionName = "0.3.0"
     }
 
     // Подпись берётся из переменных окружения (секреты GitHub); ключ в репозиторий не кладём.
@@ -65,6 +65,8 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.5")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.5")
     implementation("androidx.navigation:navigation-compose:2.8.0")
+
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
 
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")

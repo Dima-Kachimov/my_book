@@ -167,6 +167,10 @@ fun ReaderScreen(vm: AppViewModel, nav: NavController) {
                 },
                 onDiary = { showSectionPicker = true },
                 onTags = { showTags = true },
+                onMemo = { vm.addMemos(selected); selected = emptySet() },
+                onDetails = if (selected.size == 1) {
+                    { sheetVerse = verses.firstOrNull { it.verse == selected.first() } }
+                } else null,
                 onFragment = if (selected.size == 1) {
                     { fragmentVerse = verses.firstOrNull { it.verse == selected.first() } }
                 } else null,
@@ -471,6 +475,8 @@ private fun SelectionBar(
     onCopy: () -> Unit,
     onDiary: () -> Unit,
     onTags: () -> Unit,
+    onMemo: () -> Unit,
+    onDetails: (() -> Unit)?,
     onFragment: (() -> Unit)?,
     onClose: () -> Unit,
 ) {
@@ -479,12 +485,12 @@ private fun SelectionBar(
     val tiles = listOfNotNull(
         Tile(Icons.Default.EditNote, "Заметка", onNote),
         Tile(Icons.Default.Bookmark, "Закладка", onBookmark),
-        Tile(Icons.Default.FormatUnderlined, "Подчерк.", onUnderline),
         onFragment?.let { Tile(Icons.Default.SelectAll, "Фрагмент", it) },
         Tile(Icons.Default.MenuBook, "В дневник", onDiary),
         Tile(Icons.Default.Sell, "Теги", onTags),
+        Tile(Icons.Default.School, "Заучивать", onMemo),
+        onDetails?.let { Tile(Icons.Default.Info, "Подробно", it) },
         Tile(Icons.Default.ContentCopy, "Копия", onCopy),
-        Tile(Icons.Default.FormatColorReset, "Снять", onClear),
         Tile(Icons.Default.Close, "Отмена", onClose),
     )
     Column(
@@ -502,9 +508,15 @@ private fun SelectionBar(
             maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
             modifier = Modifier.padding(top = 2.dp),
         )
-        Row(Modifier.padding(vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+        Row(Modifier.padding(vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             HL_COLORS.forEach { c ->
                 Box(Modifier.size(36.dp).clip(CircleShape).background(Color(c)).clickable { onColor(c) })
+            }
+            Box(Modifier.size(36.dp).clip(CircleShape).background(pal.soft).clickable(onClick = onUnderline), contentAlignment = Alignment.Center) {
+                Icon(Icons.Default.FormatUnderlined, "Подчеркнуть", tint = pal.heading, modifier = Modifier.size(20.dp))
+            }
+            Box(Modifier.size(36.dp).clip(CircleShape).background(pal.soft).clickable(onClick = onClear), contentAlignment = Alignment.Center) {
+                Icon(Icons.Default.FormatColorReset, "Снять", tint = pal.heading, modifier = Modifier.size(20.dp))
             }
         }
         tiles.chunked(5).forEach { rowTiles ->
@@ -639,9 +651,9 @@ private fun VerseSheet(
                 fontSize = 12.sp, letterSpacing = 1.sp,
             )
             Spacer(Modifier.height(8.dp))
-            TabRow(selectedTabIndex = tab, containerColor = pal.card) {
-                listOf("Переводы", "Закладка", "Мысль").forEachIndexed { i, t ->
-                    Tab(selected = tab == i, onClick = { tab = i }, text = { Text(t) })
+            ScrollableTabRow(selectedTabIndex = tab, containerColor = pal.card, edgePadding = 0.dp) {
+                listOf("Переводы", "Ссылки", "Слова", "Закладка", "Мысль").forEachIndexed { i, t ->
+                    Tab(selected = tab == i, onClick = { tab = i }, text = { Text(t, maxLines = 1) })
                 }
             }
             Spacer(Modifier.height(14.dp))
@@ -663,7 +675,9 @@ private fun VerseSheet(
                         Text("Добавьте ещё переводы в разделе «Переводы», чтобы сравнивать.", color = pal.muted, fontSize = 13.sp)
                     }
                 }
-                1 -> {
+                1 -> CrossRefsTab(vm, pos, verse, onClose)
+                2 -> WordsTab(vm, pos, verse)
+                3 -> {
                     Text(if (bookmarked) "Этот стих в закладках." else "Этот стих не в закладках.", color = pal.text)
                     Spacer(Modifier.height(10.dp))
                     Button(onClick = { vm.toggleBookmark(verse.verse); onClose() }) {
@@ -728,4 +742,100 @@ private fun TagDialog(
         },
         confirmButton = { TextButton(onClick = onClose) { Text("Готово") } },
     )
+}
+
+
+@Composable
+private fun CrossRefsTab(vm: AppViewModel, pos: Pos, verse: VerseEntity, onClose: () -> Unit) {
+    val pal = LocalPalette.current
+    val refs by produceState<List<Pair<AssetData.XRef, String?>>?>(null, verse.verse, pos) {
+        value = vm.crossRefs(pos.book, pos.chapter, verse.verse)
+    }
+    val list = refs
+    when {
+        list == null -> Text("Загрузка…", color = pal.muted)
+        list.isEmpty() -> Text("Для этого стиха нет перекрёстных ссылок.", color = pal.muted)
+        else -> {
+            list.forEach { (r, text) ->
+                Column(
+                    Modifier.fillMaxWidth().clickable { vm.goTo(r.book, r.chapter, r.from); onClose() }.padding(vertical = 8.dp),
+                ) {
+                    Text(
+                        Books.name(r.book) + " " + refText(r.book, r.chapter, r.from, r.to).substringAfter(' '),
+                        color = pal.heading, fontWeight = FontWeight.Bold, fontSize = 14.sp,
+                    )
+                    Text(
+                        text ?: "— нет в выбранном переводе —", color = if (text == null) pal.muted else pal.text,
+                        fontFamily = FontFamily.Serif, fontSize = 16.sp, lineHeight = 23.sp, maxLines = 4,
+                    )
+                }
+                Box(Modifier.fillMaxWidth().height(1.dp).background(pal.line))
+            }
+            Text(
+                "Источник: OpenBible.info (CC BY), лучшие по голосам пользователей.",
+                color = pal.muted, fontSize = 11.sp, modifier = Modifier.padding(top = 10.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun WordsTab(vm: AppViewModel, pos: Pos, verse: VerseEntity) {
+    val pal = LocalPalette.current
+    val words by produceState<List<AssetData.Word>?>(null, verse.verse, pos) {
+        value = vm.originalWords(pos.book, pos.chapter, verse.verse)
+    }
+    var open by remember(verse.verse) { mutableStateOf<Int?>(null) }
+    val list = words
+    when {
+        list == null -> Text("Загрузка…", color = pal.muted)
+        list.isEmpty() -> Text("Нет данных об оригинале для этого стиха.", color = pal.muted)
+        else -> {
+            Text(
+                if (pos.book >= Books.NT_START) "Греческий текст (NA28). Нажмите на слово, чтобы увидеть словарную статью."
+                else "Еврейский текст (Ленинградский кодекс). Нажмите на слово, чтобы увидеть словарную статью.",
+                color = pal.muted, fontSize = 12.sp, modifier = Modifier.padding(bottom = 8.dp),
+            )
+            list.forEachIndexed { i, w ->
+                Column(Modifier.fillMaxWidth().clickable { open = if (open == i) null else i }.padding(vertical = 6.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(w.orig, color = pal.text, fontFamily = FontFamily.Serif, fontSize = 22.sp, modifier = Modifier.weight(1f))
+                        if (w.strong.isNotBlank()) {
+                            Surface(color = pal.soft, shape = RoundedCornerShape(10.dp)) {
+                                Text(
+                                    w.strong, color = pal.heading, fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                )
+                            }
+                        }
+                    }
+                    Text(
+                        (if (w.translit.isNotBlank()) w.translit + " · " else "") + w.gloss,
+                        color = pal.muted, fontSize = 14.sp,
+                    )
+                    if (open == i && w.strong.isNotBlank()) {
+                        val entry by produceState<AssetData.LexEntry?>(null, w.strong) { value = vm.lexicon(w.strong) }
+                        val e = entry
+                        Surface(color = pal.soft, shape = RoundedCornerShape(12.dp), modifier = Modifier.padding(top = 6.dp)) {
+                            Column(Modifier.padding(12.dp)) {
+                                if (e == null) {
+                                    Text("Нет словарной статьи.", color = pal.muted, fontSize = 13.sp)
+                                } else {
+                                    Text("${e.lemma} · ${e.translit} — ${e.gloss}", color = pal.text, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                    if (e.definition.isNotBlank()) {
+                                        Text(e.definition, color = pal.text, fontSize = 13.sp, lineHeight = 19.sp, modifier = Modifier.padding(top = 6.dp))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                Box(Modifier.fillMaxWidth().height(1.dp).background(pal.line))
+            }
+            Text(
+                "Источник: STEPBible / Tyndale House (CC BY 4.0). Нумерация стихов — по оригиналу, в Псалмах и некоторых местах может отличаться от перевода.",
+                color = pal.muted, fontSize = 11.sp, modifier = Modifier.padding(top = 10.dp),
+            )
+        }
+    }
 }

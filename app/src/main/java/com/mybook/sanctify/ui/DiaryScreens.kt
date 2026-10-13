@@ -26,6 +26,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Event
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.mybook.sanctify.AppViewModel
@@ -319,6 +320,7 @@ private fun AddVerseDialog(
 private fun NumberedList(vm: AppViewModel, section: SectionEntity, entries: List<EntryEntity>, modifier: Modifier) {
     val pal = LocalPalette.current
     val items = remember(entries) { entries.sortedBy { it.createdAt } }
+    val ctx = androidx.compose.ui.platform.LocalContext.current
     var draft by remember(section.id) { mutableStateOf("") }
     var editing by remember { mutableStateOf<EntryEntity?>(null) }
 
@@ -349,13 +351,24 @@ private fun NumberedList(vm: AppViewModel, section: SectionEntity, entries: List
                         fontFamily = androidx.compose.ui.text.font.FontFamily.Serif,
                         modifier = Modifier.width(36.dp),
                     )
-                    Text(
-                        e.title.ifBlank { "Без названия" },
-                        color = if (e.done) pal.muted else pal.text, fontSize = 18.sp,
-                        fontFamily = androidx.compose.ui.text.font.FontFamily.Serif,
-                        textDecoration = if (e.done) androidx.compose.ui.text.style.TextDecoration.LineThrough else null,
-                        modifier = Modifier.weight(1f).padding(top = 1.dp),
-                    )
+                    Column(Modifier.weight(1f).padding(top = 1.dp)) {
+                        Text(
+                            e.title.ifBlank { "Без названия" },
+                            color = if (e.done) pal.muted else pal.text, fontSize = 18.sp,
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Serif,
+                            textDecoration = if (e.done) androidx.compose.ui.text.style.TextDecoration.LineThrough else null,
+                        )
+                        if (e.dueAt > 0) {
+                            val overdue = !e.done && e.dueAt < System.currentTimeMillis()
+                            Text(
+                                "срок: " + dateFmt.format(Date(e.dueAt)) + if (overdue) " · просрочено" else "",
+                                color = if (overdue) Color(0xFFE53935) else pal.muted, fontSize = 12.sp,
+                            )
+                        }
+                    }
+                    IconButton(onClick = { pickDate(ctx, e.dueAt) { vm.setDue(e, it) } }) {
+                        Icon(Icons.Default.Event, "Срок", tint = if (e.dueAt > 0) pal.heading else pal.line)
+                    }
                     IconButton(onClick = { vm.toggleDone(e) }) {
                         Icon(Icons.Default.Check, "Отвечено", tint = if (e.done) pal.verseNum else pal.line)
                     }

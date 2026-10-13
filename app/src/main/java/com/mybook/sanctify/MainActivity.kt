@@ -33,6 +33,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             val vm: AppViewModel = viewModel()
             val ctx = LocalContext.current
+            LaunchedEffect(Unit) { Reminders.rescheduleAll(ctx) }
             LaunchedEffect(Unit) {
                 vm.messages.collect { Toast.makeText(ctx, it, Toast.LENGTH_LONG).show() }
             }
@@ -45,7 +46,7 @@ class MainActivity : ComponentActivity() {
                         if (route in bottomBarRoutes) {
                             AppBottomBar(route) { r ->
                                 nav.navigate(r) {
-                                    popUpTo("reader") { saveState = true }
+                                    popUpTo("today") { saveState = true }
                                     launchSingleTop = true
                                     restoreState = true
                                 }
@@ -53,7 +54,9 @@ class MainActivity : ComponentActivity() {
                         }
                     },
                 ) { pad ->
-                    NavHost(nav, startDestination = "reader", modifier = Modifier.padding(pad)) {
+                    NavHost(nav, startDestination = "today", modifier = Modifier.padding(pad)) {
+                        composable("today") { TodayScreen(vm, nav) }
+                        composable("memo") { MemoScreen(vm, nav) }
                         composable("reader") { ReaderScreen(vm, nav) }
                         composable("diary") { DiaryScreen(vm, nav) }
                         composable("marks") { MarksScreen(vm, nav) }

@@ -10,6 +10,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.Today
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -27,6 +28,7 @@ import androidx.compose.ui.unit.sp
 private class NavItem(val route: String, val label: String, val icon: ImageVector)
 
 private val navItems = listOf(
+    NavItem("today", "Сегодня", Icons.Default.Today),
     NavItem("reader", "Библия", Icons.Default.MenuBook),
     NavItem("diary", "Дневник", Icons.Default.EditNote),
     NavItem("marks", "Пометки", Icons.Default.Bookmark),
@@ -39,7 +41,7 @@ val bottomBarRoutes = navItems.map { it.route }
 fun AppBottomBar(route: String?, onNavigate: (String) -> Unit) {
     val pal = LocalPalette.current
     Box(
-        Modifier.fillMaxWidth().background(pal.bg).padding(horizontal = 32.dp, vertical = 6.dp),
+        Modifier.fillMaxWidth().background(pal.bg).padding(horizontal = 20.dp, vertical = 6.dp),
         contentAlignment = Alignment.Center,
     ) {
         Surface(
@@ -64,7 +66,7 @@ fun AppBottomBar(route: String?, onNavigate: (String) -> Unit) {
                                 indication = null,
                                 onClick = { onNavigate(item.route) },
                             )
-                            .padding(horizontal = if (selected) 14.dp else 16.dp, vertical = 8.dp),
+                            .padding(horizontal = if (selected) 12.dp else 14.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Icon(

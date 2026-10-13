@@ -176,6 +176,45 @@ interface AppDao {
     @Insert(onConflict = REPLACE) suspend fun putTags(l: List<TagEntity>)
     @Insert(onConflict = REPLACE) suspend fun putVerseTags(l: List<VerseTagEntity>)
 
+    // ---------- Заучивание ----------
+    @Query("SELECT * FROM memo_verses ORDER BY dueAt")
+    fun memos(): Flow<List<MemoEntity>>
+
+    @Insert(onConflict = IGNORE)
+    suspend fun insertMemos(l: List<MemoEntity>)
+
+    @Update
+    suspend fun updateMemo(m: MemoEntity)
+
+    @Query("DELETE FROM memo_verses WHERE id = :id")
+    suspend fun deleteMemo(id: Long)
+
+    @Query("SELECT * FROM memo_verses") suspend fun listMemos(): List<MemoEntity>
+    @Query("DELETE FROM memo_verses") suspend fun clearMemos()
+    @Insert(onConflict = REPLACE) suspend fun putMemos(l: List<MemoEntity>)
+
+    // ---------- Молитвы, сроки, «Сегодня» ----------
+    @Query("UPDATE entries SET dueAt = :dueAt WHERE id = :id")
+    suspend fun setDue(id: Long, dueAt: Long)
+
+    @Query(
+        "SELECT e.* FROM entries e JOIN sections s ON e.sectionId = s.id WHERE s.isList = 1 AND e.done = 0 " +
+            "ORDER BY CASE WHEN e.dueAt > 0 THEN 0 ELSE 1 END, e.dueAt, e.createdAt"
+    )
+    fun openPrayers(): Flow<List<EntryEntity>>
+
+    @Query("SELECT COUNT(*) FROM entries e JOIN sections s ON e.sectionId = s.id WHERE s.isList = 1 AND e.done = 0")
+    suspend fun openPrayersCount(): Int
+
+    @Query("SELECT * FROM entries WHERE dueAt > :now AND done = 0")
+    suspend fun upcomingDue(now: Long): List<EntryEntity>
+
+    @Query("SELECT * FROM entries ORDER BY updatedAt DESC LIMIT 1")
+    fun latestEntry(): Flow<EntryEntity?>
+
+    @Query("SELECT * FROM sections WHERE id = :id")
+    suspend fun section(id: Long): SectionEntity?
+
     // ---------- Резервная копия ----------
     @Query("SELECT * FROM sections") suspend fun listSections(): List<SectionEntity>
     @Query("SELECT * FROM entries") suspend fun listEntries(): List<EntryEntity>

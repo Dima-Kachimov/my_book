@@ -22,6 +22,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import android.content.Context
+import java.util.Calendar
 import com.mybook.sanctify.data.HighlightEntity
 
 /** Цвета маркера. */
@@ -125,7 +127,7 @@ fun SectionLabel(text: String) {
 
 fun NavController.openReader() {
     navigate("reader") {
-        popUpTo("reader") { inclusive = false }
+        popUpTo("today") { inclusive = false }
         launchSingleTop = true
     }
 }
@@ -142,4 +144,20 @@ fun ClickableCard(onClick: () -> Unit, modifier: Modifier = Modifier, content: @
     ) {
         Column(Modifier.padding(16.dp), content = content)
     }
+}
+
+
+/** Диалог выбора даты. Возвращает время 9:00 выбранного дня; 0 — «убрать срок». */
+fun pickDate(ctx: Context, current: Long, onPick: (Long) -> Unit) {
+    val cal = Calendar.getInstance().apply { if (current > 0) timeInMillis = current }
+    val d = android.app.DatePickerDialog(
+        ctx,
+        { _, y, m, day ->
+            val c = Calendar.getInstance().apply { set(y, m, day, 9, 0, 0); set(Calendar.MILLISECOND, 0) }
+            onPick(c.timeInMillis)
+        },
+        cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH),
+    )
+    if (current > 0) d.setButton(android.content.DialogInterface.BUTTON_NEUTRAL, "Убрать срок") { _, _ -> onPick(0L) }
+    d.show()
 }

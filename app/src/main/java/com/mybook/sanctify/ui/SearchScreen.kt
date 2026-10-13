@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -16,6 +17,8 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -37,6 +40,25 @@ private enum class Scope(val title: String) {
 
 @Composable
 fun SearchScreen(vm: AppViewModel, nav: NavController) {
+    val pal = LocalPalette.current
+    var area by rememberSaveable { mutableIntStateOf(0) }
+    Column(Modifier.fillMaxSize().background(pal.bg)) {
+        ScreenHeader("Поиск", onBack = { nav.popBackStack() })
+        Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf("Библия", "Дневник", "Теги").forEachIndexed { i, t ->
+                FilterChip(selected = area == i, onClick = { area = i }, label = { Text(t) })
+            }
+        }
+        when (area) {
+            0 -> BibleSearch(vm, nav)
+            1 -> DiarySearch(vm, nav)
+            else -> TagSearch(vm, nav)
+        }
+    }
+}
+
+@Composable
+private fun BibleSearch(vm: AppViewModel, nav: NavController) {
     val pal = LocalPalette.current
     val installed by vm.translations.collectAsStateWithLifecycle()
     val currentTr by vm.trId.collectAsStateWithLifecycle()
@@ -76,12 +98,7 @@ fun SearchScreen(vm: AppViewModel, nav: NavController) {
         searching = false
     }
 
-    Column(Modifier.fillMaxSize().background(pal.bg)) {
-        ScreenHeader("Поиск", onBack = { nav.popBackStack() }) {
-            TextButton(onClick = { showOptions = !showOptions }) {
-                Text(if (showOptions) "Скрыть параметры" else "Параметры", color = pal.heading)
-            }
-        }
+    Column(Modifier.fillMaxSize()) {
         OutlinedTextField(
             value = query, onValueChange = { query = it }, singleLine = true,
             label = { Text("Слово, фраза или ссылка (Ин 3:16)") },
@@ -91,8 +108,13 @@ fun SearchScreen(vm: AppViewModel, nav: NavController) {
             },
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             keyboardActions = KeyboardActions(onSearch = {}),
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
         )
+        Row(Modifier.padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = { showOptions = !showOptions }) {
+                Text(if (showOptions) "Скрыть параметры" else "Параметры поиска", color = pal.heading)
+            }
+        }
         if (showOptions) {
             Column(Modifier.padding(horizontal = 16.dp)) {
                 OptionLabel("Режим")
@@ -175,6 +197,96 @@ fun SearchScreen(vm: AppViewModel, nav: NavController) {
                         }
                     }
                     Text(text, color = pal.text, fontSize = 16.sp, fontFamily = FontFamily.Serif, modifier = Modifier.padding(top = 4.dp))
+                }
+            }
+        }
+    }
+}
+
+/** Поиск по названиям, тексту записей, прикреплённым стихам и пунктам списков. */
+@Composable
+private fun DiarySearch(vm: AppViewModel, nav: NavController) {
+    val pal = LocalPalette.current
+    var query by rememberSaveable { mutableStateOf("") }
+    var hits by remember { mutableStateOf(emptyList<AppViewModel.DiaryHit>()) }
+    LaunchedEffect(query) {
+        delay(250)
+        hits = vm.searchDiary(query)
+    }
+    Column(Modifier.fillMaxSize()) {
+        OutlinedTextField(
+            value = query, onValueChange = { query = it }, singleLine = true,
+            label = { Text("Поиск по дневнику") },
+            leadingIcon = { Icon(Icons.Default.Search, null) },
+            trailingIcon = { if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Default.Close, "Очистить") } },
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+        )
+        if (query.trim().length >= 2) {
+            Text("Найдено записей: ${hits.size}", color = pal.muted, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+        } else {
+            Text(
+                "Ищет в заголовках, мыслях, прикреплённых стихах и пунктах списков (молитвенные нужды и др.).",
+                color = pal.muted, fontSize = 13.sp, modifier = Modifier.padding(16.dp),
+            )
+        }
+        LazyColumn(contentPadding = PaddingValues(vertical = 4.dp)) {
+            items(hits, key = { it.entry.id }) { h ->
+                ClickableCard(onClick = {
+                    vm.selectedSection.value = h.entry.sectionId
+                    if (h.isList) nav.navigate("diary") else nav.navigate("entry/${h.entry.id}")
+                }) {
+                    Text(
+                        h.section + if (h.isList) " · список" else "", color = pal.muted, fontSize = 12.sp,
+                    )
+                    Text(
+                        h.entry.title.ifBlank { "Без названия" }, color = pal.text, fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Serif, fontSize = 17.sp,
+                    )
+                    Text(h.snippet, color = pal.muted, fontSize = 14.sp, maxLines = 3, modifier = Modifier.padding(top = 4.dp))
+                }
+            }
+        }
+    }
+}
+
+/** Стихи с выбранными тегами (должны совпасть все выбранные теги). */
+@Composable
+private fun TagSearch(vm: AppViewModel, nav: NavController) {
+    val pal = LocalPalette.current
+    val tags by vm.tags.collectAsStateWithLifecycle()
+    val allVerseTags by vm.allVerseTags.collectAsStateWithLifecycle()
+    val trId by vm.trId.collectAsStateWithLifecycle()
+    var chosen by remember { mutableStateOf(setOf<Long>()) }
+
+    val verses = remember(allVerseTags, chosen) {
+        if (chosen.isEmpty()) emptyList()
+        else allVerseTags.groupBy { Triple(it.book, it.chapter, it.verse) }
+            .filter { (_, list) -> list.map { it.tagId }.toSet().containsAll(chosen) }.keys.toList()
+    }
+    Column(Modifier.fillMaxSize()) {
+        Text("Выберите один или несколько тегов:", color = pal.muted, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+        Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            tags.forEach { t ->
+                FilterChip(
+                    selected = t.id in chosen,
+                    onClick = { chosen = if (t.id in chosen) chosen - t.id else chosen + t.id },
+                    label = { Text(t.name) },
+                    leadingIcon = { Box(Modifier.size(10.dp).clip(CircleShape).background(Color(t.color))) },
+                )
+            }
+        }
+        if (chosen.isNotEmpty()) {
+            Text("Найдено стихов: ${verses.size}", color = pal.muted, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+        }
+        LazyColumn(contentPadding = PaddingValues(vertical = 4.dp)) {
+            items(verses, key = { "${it.first}:${it.second}:${it.third}" }) { (b, c, v) ->
+                val text by produceState<String?>(null, b, c, v, trId) { value = vm.verseText(b, c, v) }
+                ClickableCard(onClick = { vm.goTo(b, c, v); nav.openReader() }) {
+                    Text(refText(b, c, v), color = pal.heading, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text(
+                        text ?: "— нет в выбранном переводе —", color = if (text == null) pal.muted else pal.text,
+                        fontFamily = FontFamily.Serif, fontSize = 16.sp, modifier = Modifier.padding(top = 4.dp),
+                    )
                 }
             }
         }

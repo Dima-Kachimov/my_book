@@ -11,9 +11,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
     entities = [
         TranslationEntity::class, VerseEntity::class, HighlightEntity::class, NoteEntity::class,
         BookmarkEntity::class, SectionEntity::class, EntryEntity::class, EntryVerseEntity::class,
-        TagEntity::class, VerseTagEntity::class,
+        TagEntity::class, VerseTagEntity::class, MemoEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = false,
 )
 abstract class AppDb : RoomDatabase() {
@@ -51,9 +51,21 @@ abstract class AppDb : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE entries ADD COLUMN dueAt INTEGER NOT NULL DEFAULT 0")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `memo_verses` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`book` INTEGER NOT NULL, `chapter` INTEGER NOT NULL, `verseStart` INTEGER NOT NULL, " +
+                        "`verseEnd` INTEGER NOT NULL, `box` INTEGER NOT NULL, `dueAt` INTEGER NOT NULL, `addedAt` INTEGER NOT NULL)"
+                )
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_memo_verses_book_chapter_verseStart_verseEnd` ON `memo_verses` (`book`, `chapter`, `verseStart`, `verseEnd`)")
+            }
+        }
+
         fun build(ctx: Context): AppDb =
             Room.databaseBuilder(ctx, AppDb::class.java, "diary.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .addCallback(object : Callback() {
                     override fun onCreate(db: SupportSQLiteDatabase) {
                         seedTags(db)

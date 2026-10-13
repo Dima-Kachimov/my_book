@@ -97,6 +97,8 @@ data class EntryEntity(
     val updatedAt: Long,
     /** Отметка «выполнено/отвечено» для пунктов списка. */
     val done: Boolean = false,
+    /** Срок (мс, 9:00 выбранного дня); 0 — без срока. */
+    val dueAt: Long = 0,
 )
 
 /** Стих(и), прикреплённые к записи дневника. text — снимок текста на момент добавления. */
@@ -159,6 +161,20 @@ data class VerseTagEntity(
     val verse: Int,
 )
 
+/** Стих(и) на заучивании. box — ступень интервального повторения, dueAt — когда повторить. */
+@Serializable
+@Entity(tableName = "memo_verses", indices = [Index(value = ["book", "chapter", "verseStart", "verseEnd"], unique = true)])
+data class MemoEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val book: Int,
+    val chapter: Int,
+    val verseStart: Int,
+    val verseEnd: Int,
+    val box: Int = 0,
+    val dueAt: Long,
+    val addedAt: Long,
+)
+
 @Serializable
 data class Backup(
     val version: Int = 1,
@@ -170,4 +186,5 @@ data class Backup(
     val bookmarks: List<BookmarkEntity>,
     val tags: List<TagEntity> = emptyList(),
     val verseTags: List<VerseTagEntity> = emptyList(),
+    val memos: List<MemoEntity> = emptyList(),
 )

@@ -2,6 +2,7 @@ package com.mybook.sanctify
 
 import android.app.Application
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import java.io.File
 import androidx.compose.runtime.getValue
@@ -347,7 +348,17 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
     fun editListItem(id: Long, text: String) =
         viewModelScope.launch { dao.updateTitle(id, text.trim(), System.currentTimeMillis()) }
 
-    fun toggleDone(e: EntryEntity) = viewModelScope.launch { dao.setDone(e.id, !e.done) }
+    fun toggleDone(e: EntryEntity) = viewModelScope.launch {
+        dao.setDone(e.id, !e.done)
+        if (!e.done) Reminders.cancelDue(app, e.id) else Reminders.scheduleDue(app, e.id, e.title, e.dueAt)
+    }
+
+    /** Срок для пункта списка (millis или 0 — убрать). */
+    fun setDue(e: EntryEntity, millis: Long) = viewModelScope.launch {
+        dao.setDue(e.id, millis)
+        Reminders.cancelDue(app, e.id)
+        if (millis > 0 && !e.done) Reminders.scheduleDue(app, e.id, e.title, millis)
+    }
 
     fun renameSection(s: SectionEntity, name: String) =
         viewModelScope.launch { dao.updateSection(s.copy(name = name.trim())) }
@@ -379,7 +390,10 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun deleteEntry(id: Long) = viewModelScope.launch { dao.deleteEntry(id) }
+    fun deleteEntry(id: Long) = viewModelScope.launch {
+        Reminders.cancelDue(app, id)
+        dao.deleteEntry(id)
+    }
 
     fun entryVerses(entryId: Long) = dao.entryVerses(entryId)
 
@@ -500,13 +514,7 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
     // ---------- Резервная копия ----------
     fun exportBackup(uri: Uri) = viewModelScope.launch {
         try {
-            val b = Backup(
-                sections = dao.listSections(), entries = dao.listEntries(),
-                entryVerses = dao.listEntryVerses(), highlights = dao.listHighlights(),
-                notes = dao.listNotes(), bookmarks = dao.listBookmarks(),
-                tags = dao.listTags(), verseTags = dao.listVerseTags(),
-            )
-            val text = json.encodeToString(Backup.serializer(), b)
+            val text = BackupManager.buildJson(dao)
             withContext(Dispatchers.IO) {
                 app.contentResolver.openOutputStream(uri)?.use { it.write(text.toByteArray()) }
                     ?: error("Не удалось открыть файл")
@@ -523,18 +531,149 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
                 app.contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
                     ?: error("Не удалось открыть файл")
             }
-            val b = json.decodeFromString(Backup.serializer(), text)
+            val b = BackupManager.parse(text)
             db.withTransaction {
                 dao.clearEntryVerses(); dao.clearEntries(); dao.clearSections()
                 dao.clearAllHighlights(); dao.clearNotes(); dao.clearBookmarks()
                 if (b.tags.isNotEmpty()) { dao.clearVerseTags(); dao.clearTags() }
+                dao.clearMemos()
                 dao.putSections(b.sections); dao.putEntries(b.entries); dao.putEntryVerses(b.entryVerses)
                 dao.putHighlights(b.highlights); dao.putNotes(b.notes); dao.putBookmarks(b.bookmarks)
                 if (b.tags.isNotEmpty()) { dao.putTags(b.tags); dao.putVerseTags(b.verseTags) }
+                dao.putMemos(b.memos)
             }
+            Reminders.rescheduleAll(app)
             messages.emit("Данные восстановлены")
         } catch (e: Exception) {
             messages.emit("Не удалось восстановить: ${e.message ?: e.javaClass.simpleName}")
+        }
+    }
+
+    // ---------- Автокопия ----------
+    var backupFolder by mutableStateOf(prefs.getString("backup_tree", null)?.let { folderLabel(Uri.parse(it)) })
+        private set
+    var autoBackupOn by mutableStateOf(prefs.getBoolean("backup_on", false))
+        private set
+    var lastBackup by mutableStateOf(prefs.getLong("backup_last", 0L))
+        private set
+
+    private fun folderLabel(uri: Uri) = Uri.decode(uri.lastPathSegment ?: uri.toString())
+
+    fun setBackupFolder(uri: Uri) {
+        try {
+            app.contentResolver.takePersistableUriPermission(
+                uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+            )
+        } catch (e: Exception) {
+            // некоторые провайдеры не поддерживают постоянный доступ
+        }
+        prefs.edit().putString("backup_tree", uri.toString()).apply()
+        backupFolder = folderLabel(uri)
+    }
+
+    fun setAutoBackup(on: Boolean) {
+        autoBackupOn = on
+        prefs.edit().putBoolean("backup_on", on).apply()
+        BackupManager.schedule(app, on && backupFolder != null)
+    }
+
+    fun backupNow() = viewModelScope.launch {
+        try {
+            val ok = withContext(Dispatchers.IO) { BackupManager.runNow(app) }
+            if (ok) {
+                lastBackup = System.currentTimeMillis()
+                messages.emit("Копия сохранена в папку")
+            } else {
+                messages.emit("Сначала выберите папку для копий")
+            }
+        } catch (e: Exception) {
+            messages.emit("Не удалось сохранить копию: ${e.message ?: e.javaClass.simpleName}")
+        }
+    }
+
+    // ---------- Напоминания ----------
+    var readingReminder by mutableStateOf(Reminders.config(app, Reminders.READING))
+        private set
+    var prayerReminder by mutableStateOf(Reminders.config(app, Reminders.PRAYER))
+        private set
+
+    fun setReminder(kind: String, c: ReminderConfig) {
+        Reminders.saveConfig(app, kind, c)
+        if (kind == Reminders.READING) readingReminder = c else prayerReminder = c
+    }
+
+    // ---------- «Сегодня» ----------
+    val openPrayers = dao.openPrayers().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val latestEntry = dao.latestEntry().stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    // ---------- Заучивание ----------
+    val memos = dao.memos().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    fun addMemos(verses: Set<Int>) = viewModelScope.launch {
+        val p = pos.value
+        val now = System.currentTimeMillis()
+        dao.insertMemos(
+            verseRanges(verses).map {
+                MemoEntity(book = p.book, chapter = p.chapter, verseStart = it.first, verseEnd = it.last, dueAt = now, addedAt = now)
+            }
+        )
+        messages.emit("Добавлено в заучивание")
+    }
+
+    fun deleteMemo(id: Long) = viewModelScope.launch { dao.deleteMemo(id) }
+
+    /** rating: 0 — не помню, 1 — трудно, 2 — помню. Интервалы по ступеням: 1, 3, 7, 14, 30, 90, 180 дней. */
+    fun review(m: MemoEntity, rating: Int) = viewModelScope.launch {
+        val day = 24L * 60 * 60 * 1000
+        val intervals = longArrayOf(1, 3, 7, 14, 30, 90, 180)
+        val now = System.currentTimeMillis()
+        val updated = when (rating) {
+            0 -> m.copy(box = 0, dueAt = now + 10 * 60 * 1000)
+            1 -> m.copy(dueAt = now + day)
+            else -> {
+                val box = minOf(m.box + 1, intervals.size - 1)
+                m.copy(box = box, dueAt = now + intervals[m.box.coerceIn(0, intervals.size - 1)] * day)
+            }
+        }
+        dao.updateMemo(updated)
+    }
+
+    /** Текст диапазона стихов в текущем переводе. */
+    suspend fun rangeText(book: Int, chapter: Int, from: Int, to: Int): String? =
+        dao.range(trId.value, book, chapter, from, to).takeIf { it.isNotEmpty() }?.joinToString(" ") { it.text }
+
+    // ---------- Перекрёстные ссылки и словарь ----------
+    suspend fun crossRefs(book: Int, chapter: Int, verse: Int): List<Pair<AssetData.XRef, String?>> =
+        withContext(Dispatchers.IO) {
+            AssetData.crossRefs(app, book, chapter, verse).map { it to rangeText(it.book, it.chapter, it.from, it.to) }
+        }
+
+    suspend fun originalWords(book: Int, chapter: Int, verse: Int): List<AssetData.Word> =
+        withContext(Dispatchers.IO) { AssetData.words(app, book, chapter, verse) }
+
+    suspend fun lexicon(strong: String): AssetData.LexEntry? =
+        withContext(Dispatchers.IO) { AssetData.lexicon(app, strong) }
+
+    // ---------- Поиск по дневнику ----------
+    class DiaryHit(val entry: EntryEntity, val section: String, val snippet: String, val isList: Boolean)
+
+    suspend fun searchDiary(q: String): List<DiaryHit> = withContext(Dispatchers.Default) {
+        val query = q.trim().lowercase()
+        if (query.length < 2) return@withContext emptyList()
+        val sections = dao.listSections().associateBy { it.id }
+        val verseTexts = dao.listEntryVerses().groupBy { it.entryId }
+        dao.listEntries().sortedByDescending { it.updatedAt }.mapNotNull { e ->
+            val inVerses = verseTexts[e.id].orEmpty().firstOrNull { it.text.lowercase().contains(query) }
+            val hay = when {
+                e.title.lowercase().contains(query) -> e.title
+                e.body.lowercase().contains(query) -> e.body
+                inVerses != null -> inVerses.text
+                else -> null
+            } ?: return@mapNotNull null
+            val i = hay.lowercase().indexOf(query).coerceAtLeast(0)
+            val snippet = hay.substring((i - 30).coerceAtLeast(0), (i + 90).coerceAtMost(hay.length)).replace('\n', ' ')
+            val sec = sections[e.sectionId]
+            DiaryHit(e, sec?.name ?: "", snippet, sec?.isList == true)
         }
     }
 
