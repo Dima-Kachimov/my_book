@@ -181,7 +181,7 @@ fun SettingsScreen(vm: AppViewModel, nav: NavController) {
                         FilterChip(selected = vm.lockDelaySec == sec, onClick = { vm.setLockDelay(sec) }, label = { Text(label) })
                     }
                 }
-                SwitchRow("Скрывать в списке приложений и запретить скриншоты", vm.secureScreen) { vm.setSecureScreen(it) }
+                SwitchRow("Скрывать в списке приложений и запретить скриншоты", vm.secureScreen) { vm.changeSecureScreen(it) }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = { pinDialog = PinDialog.CHANGE }) { Text("Сменить PIN") }
                     OutlinedButton(onClick = { pinDialog = PinDialog.SECRET }) { Text("Секретный вопрос") }

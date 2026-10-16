@@ -779,7 +779,7 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
         prefs.edit().putInt("lock_delay", sec).apply()
     }
 
-    fun setSecureScreen(on: Boolean) {
+    fun changeSecureScreen(on: Boolean) {
         secureScreen = on
         prefs.edit().putBoolean("secure_screen", on).apply()
     }
