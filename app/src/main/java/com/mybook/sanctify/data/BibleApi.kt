@@ -78,6 +78,7 @@ object BibleApi {
     fun downloadUrl(id: String) = "$BASE/$id.json"
 
     private const val BIBLEAPI = "https://raw.githubusercontent.com/bibleapi/bibleapi-bibles-json/master"
+    private const val SCROLLMAPPER = "https://raw.githubusercontent.com/scrollmapper/bible_databases/master/formats/json"
 
     /**
      * Дополнительные русские переводы из стороннего открытого репозитория (формат: один стих — одна JSON-строка).
@@ -89,10 +90,39 @@ object BibleApi {
             "Библия, современный русский перевод. В источнике нет 4 Царств. Авторские права у правообладателя.",
         ),
         CatalogItem(
+            "ukrogienko", "Українська Біблія (Огієнко)", "Ukrainian", "uk", "$SCROLLMAPPER/UkrOgienko.json",
+            "Переклад Івана Огієнка. Неканонічні книги пропускаються.",
+        ),
+        CatalogItem(
             "nrt", "Новый русский перевод (NRT)", "Russian", "ru", "$BIBLEAPI/nrt.json",
             "Новый русский перевод. В источнике нет 4 Царств. Авторские права у правообладателя.",
         ),
     )
+
+    private val ENGLISH_BOOKS = listOf(
+        "Genesis", "Exodus", "Leviticus", "Numbers", "Deuteronomy", "Joshua", "Judges", "Ruth", "1 Samuel", "2 Samuel",
+        "1 Kings", "2 Kings", "1 Chronicles", "2 Chronicles", "Ezra", "Nehemiah", "Esther", "Job", "Psalms", "Proverbs",
+        "Ecclesiastes", "Song of Solomon", "Isaiah", "Jeremiah", "Lamentations", "Ezekiel", "Daniel", "Hosea", "Joel",
+        "Amos", "Obadiah", "Jonah", "Micah", "Nahum", "Habakkuk", "Zephaniah", "Haggai", "Zechariah", "Malachi",
+        "Matthew", "Mark", "Luke", "John", "Acts", "Romans", "1 Corinthians", "2 Corinthians", "Galatians", "Ephesians",
+        "Philippians", "Colossians", "1 Thessalonians", "2 Thessalonians", "1 Timothy", "2 Timothy", "Titus", "Philemon",
+        "Hebrews", "James", "1 Peter", "2 Peter", "1 John", "2 John", "3 John", "Jude", "Revelation",
+    )
+
+    private fun normName(s: String): String =
+        s.lowercase().replace("iii", "3").replace("ii", "2").let { if (it.startsWith("i ")) "1" + it.drop(2) else it }
+            .filter { it.isLetterOrDigit() }
+
+    private val nameToBook: Map<String, Int> by lazy {
+        val m = HashMap<String, Int>()
+        ENGLISH_BOOKS.forEachIndexed { i, n -> m[normName(n)] = i + 1 }
+        m["revelationofjohn"] = 66; m["revelationtojohn"] = 66; m["apocalypse"] = 66
+        m["psalm"] = 19; m["songofsongs"] = 22; m["canticles"] = 22; m["songofsolomon"] = 22
+        m
+    }
+
+    /** Английское название книги (в т. ч. римские цифры: «II Kings») → номер 1..66, иначе null. */
+    private fun bookByName(name: String): Int? = nameToBook[normName(name.trim())]
 
     private val BOOK_IDS = listOf(
         "Gen", "Exod", "Lev", "Num", "Deut", "Josh", "Judg", "Ruth", "1Sam", "2Sam", "1Kgs", "2Kgs",
@@ -174,13 +204,24 @@ object BibleApi {
     /** [idOverride] — принудительный id перевода (иначе берётся abbreviation из файла). */
     fun parse(text: String, idOverride: String?): ParsedBible {
         val root = json.parseToJsonElement(text).jsonObject
-        val id = idOverride ?: root["abbreviation"].str() ?: "custom"
-        val name = root["translation"].str() ?: id
+        val title = root["translation"].str()
+        val id = idOverride ?: root["abbreviation"].str()
+            ?: title?.substringBefore(':')?.lowercase()?.filter { it.isLetterOrDigit() }?.ifBlank { null }
+            ?: "custom"
+        val name = title?.substringAfter(": ", title) ?: id
         val language = root["language"].str() ?: ""
         val verses = ArrayList<VerseEntity>(32_000)
-        root["books"].items().forEachIndexed { bi, (bkey, bel) ->
+        val bookItems = root["books"].items()
+        bookItems.forEachIndexed { bi, (bkey, bel) ->
             val bo = bel as? JsonObject ?: return@forEachIndexed
-            val book = bo["nr"].int() ?: bkey.toIntOrNull() ?: (bi + 1)
+            // Номер книги: поле nr (getBible) → английское название (scrollmapper и др.; лишние книги пропускаем)
+            // → ключ → порядковый номер, если книг ровно 66.
+            val book = bo["nr"].int()
+                ?: bo["name"].str()?.let { bookByName(it) }
+                ?: bkey.toIntOrNull()?.takeIf { bo["name"] == null }
+                ?: (bi + 1).takeIf { bookItems.size == 66 && bo["name"] == null }
+                ?: return@forEachIndexed
+            if (book !in 1..66) return@forEachIndexed
             bo["chapters"].items().forEachIndexed { ci, (ckey, cel) ->
                 val co = cel as? JsonObject ?: return@forEachIndexed
                 val chapter = co["chapter"].int() ?: ckey.toIntOrNull() ?: (ci + 1)
