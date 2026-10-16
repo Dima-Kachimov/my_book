@@ -215,6 +215,34 @@ interface AppDao {
     @Query("SELECT * FROM sections WHERE id = :id")
     suspend fun section(id: Long): SectionEntity?
 
+    // ---------- Библиотека ----------
+    @Query("SELECT * FROM books ORDER BY addedAt DESC")
+    fun books(): Flow<List<BookEntity>>
+
+    @Query("SELECT * FROM books WHERE id = :id")
+    suspend fun book(id: Long): BookEntity?
+
+    @Insert
+    suspend fun insertBook(b: BookEntity): Long
+
+    @Update
+    suspend fun updateBook(b: BookEntity)
+
+    @Query("DELETE FROM books WHERE id = :id")
+    suspend fun deleteBook(id: Long)
+
+    @Query("UPDATE books SET lastIndex = :idx, total = :total WHERE id = :id")
+    suspend fun saveProgress(id: Long, idx: Int, total: Int)
+
+    @Query("SELECT * FROM books") suspend fun listBooks(): List<BookEntity>
+    @Query("DELETE FROM books") suspend fun clearBooks()
+    @Insert(onConflict = REPLACE) suspend fun putBooks(l: List<BookEntity>)
+
+    @Query("SELECT * FROM translations") suspend fun listTranslationsOnce(): List<TranslationEntity>
+
+    @Query("SELECT * FROM verses WHERE translationId = :id ORDER BY book, chapter, verse")
+    suspend fun versesOf(id: String): List<VerseEntity>
+
     // ---------- Резервная копия ----------
     @Query("SELECT * FROM sections") suspend fun listSections(): List<SectionEntity>
     @Query("SELECT * FROM entries") suspend fun listEntries(): List<EntryEntity>

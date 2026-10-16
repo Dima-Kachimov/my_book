@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import java.io.File
+import java.util.UUID
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -512,12 +513,23 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
     private fun setProgress(id: String, p: Float) = downloads.update { it + (id to p) }
 
     // ---------- Резервная копия ----------
+    var backupIncludeBooks by mutableStateOf(prefs.getBoolean("bk_books", true))
+        private set
+    var backupIncludeBibles by mutableStateOf(prefs.getBoolean("bk_bibles", true))
+        private set
+
+    fun setBackupOptions(books: Boolean, bibles: Boolean) {
+        backupIncludeBooks = books
+        backupIncludeBibles = bibles
+        prefs.edit().putBoolean("bk_books", books).putBoolean("bk_bibles", bibles).apply()
+    }
+
+    /** Полная копия в выбранный файл (ZIP): данные, настройки, книги, тексты Библий — по настройкам. */
     fun exportBackup(uri: Uri) = viewModelScope.launch {
         try {
-            val text = BackupManager.buildJson(dao)
             withContext(Dispatchers.IO) {
-                app.contentResolver.openOutputStream(uri)?.use { it.write(text.toByteArray()) }
-                    ?: error("Не удалось открыть файл")
+                val out = app.contentResolver.openOutputStream(uri) ?: error("Не удалось открыть файл")
+                BackupManager.writeZip(app, out, backupIncludeBooks, backupIncludeBibles)
             }
             messages.emit("Резервная копия сохранена")
         } catch (e: Exception) {
@@ -527,26 +539,36 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
 
     fun importBackup(uri: Uri) = viewModelScope.launch {
         try {
-            val text = withContext(Dispatchers.IO) {
-                app.contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
-                    ?: error("Не удалось открыть файл")
+            withContext(Dispatchers.IO) {
+                val input = app.contentResolver.openInputStream(uri) ?: error("Не удалось открыть файл")
+                BackupManager.restore(app, input)
             }
-            val b = BackupManager.parse(text)
-            db.withTransaction {
-                dao.clearEntryVerses(); dao.clearEntries(); dao.clearSections()
-                dao.clearAllHighlights(); dao.clearNotes(); dao.clearBookmarks()
-                if (b.tags.isNotEmpty()) { dao.clearVerseTags(); dao.clearTags() }
-                dao.clearMemos()
-                dao.putSections(b.sections); dao.putEntries(b.entries); dao.putEntryVerses(b.entryVerses)
-                dao.putHighlights(b.highlights); dao.putNotes(b.notes); dao.putBookmarks(b.bookmarks)
-                if (b.tags.isNotEmpty()) { dao.putTags(b.tags); dao.putVerseTags(b.verseTags) }
-                dao.putMemos(b.memos)
-            }
+            reloadSettings()
             Reminders.rescheduleAll(app)
-            messages.emit("Данные восстановлены")
+            messages.emit("Всё восстановлено")
         } catch (e: Exception) {
             messages.emit("Не удалось восстановить: ${e.message ?: e.javaClass.simpleName}")
         }
+    }
+
+    /** Перечитывает настройки из SharedPreferences (после восстановления из копии). */
+    private fun reloadSettings() {
+        themeMode = ThemeMode.values().getOrElse(prefs.getInt("theme", 0)) { ThemeMode.PAPER }
+        fontSize = prefs.getFloat("font", 20f)
+        fontOption = FontOption.values().getOrElse(prefs.getInt("fontFamily", 0)) { FontOption.SERIF }
+        lineSpacing = prefs.getFloat("lineSpacing", 1.55f)
+        justify = prefs.getBoolean("justify", false)
+        boldText = prefs.getBoolean("bold", false)
+        trId.value = prefs.getString("tr", "") ?: ""
+        pos.value = Pos(prefs.getInt("book", 43), prefs.getInt("chapter", 1))
+        parallelId.value = prefs.getString("parallel", "") ?: ""
+        readingReminder = Reminders.config(app, Reminders.READING)
+        prayerReminder = Reminders.config(app, Reminders.PRAYER)
+        backupIncludeBooks = prefs.getBoolean("bk_books", true)
+        backupIncludeBibles = prefs.getBoolean("bk_bibles", true)
+        pinEnabled = prefs.getString("pin_hash", null) != null
+        lockDelaySec = prefs.getInt("lock_delay", 60)
+        secureScreen = prefs.getBoolean("secure_screen", false)
     }
 
     // ---------- Автокопия ----------
@@ -676,6 +698,191 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
             DiaryHit(e, sec?.name ?: "", snippet, sec?.isList == true)
         }
     }
+
+    // ---------- PIN-код ----------
+    var pinEnabled by mutableStateOf(prefs.getString("pin_hash", null) != null)
+        private set
+    var locked by mutableStateOf(prefs.getString("pin_hash", null) != null)
+    var lockDelaySec by mutableIntStateOf(prefs.getInt("lock_delay", 60))
+        private set
+    var secureScreen by mutableStateOf(prefs.getBoolean("secure_screen", false))
+        private set
+
+    val pinLength: Int get() = prefs.getInt("pin_len", 4)
+    val secretQuestion: String get() = prefs.getString("pin_q", "") ?: ""
+
+    /** Секунд до следующей попытки (0 — можно вводить). */
+    fun lockoutSeconds(): Int {
+        val left = prefs.getLong("pin_until", 0L) - System.currentTimeMillis()
+        return if (left <= 0) 0 else (left / 1000 + 1).toInt()
+    }
+
+    private fun registerFail() {
+        val fails = prefs.getInt("pin_fail", 0) + 1
+        val e = prefs.edit().putInt("pin_fail", fails)
+        if (fails % 5 == 0) {
+            val wait = 30_000L * (1L shl minOf(fails / 5 - 1, 4)) // 30 с, 1 мин, 2 мин, 4 мин, 8 мин
+            e.putLong("pin_until", System.currentTimeMillis() + wait)
+        }
+        e.apply()
+    }
+
+    private fun clearFails() = prefs.edit().putInt("pin_fail", 0).putLong("pin_until", 0L).apply()
+
+    /** true — PIN верный (приложение разблокируется). */
+    fun unlock(pin: String): Boolean {
+        if (lockoutSeconds() > 0) return false
+        val ok = PinLock.matches(pin, prefs.getString("pin_salt", "") ?: "", prefs.getString("pin_hash", "") ?: "")
+        if (ok) { clearFails(); locked = false } else registerFail()
+        return ok
+    }
+
+    fun checkPin(pin: String): Boolean =
+        PinLock.matches(pin, prefs.getString("pin_salt", "") ?: "", prefs.getString("pin_hash", "") ?: "")
+
+    fun checkAnswer(answer: String): Boolean {
+        if (lockoutSeconds() > 0) return false
+        val ok = PinLock.matches(
+            PinLock.normalizeAnswer(answer), prefs.getString("ans_salt", "") ?: "", prefs.getString("ans_hash", "") ?: "",
+        )
+        if (ok) clearFails() else registerFail()
+        return ok
+    }
+
+    fun setPin(pin: String, question: String? = null, answer: String? = null) {
+        val salt = PinLock.newSalt()
+        val e = prefs.edit().putString("pin_salt", salt).putString("pin_hash", PinLock.hash(pin, salt)).putInt("pin_len", pin.length)
+        if (question != null && answer != null) {
+            val aSalt = PinLock.newSalt()
+            e.putString("pin_q", question.trim()).putString("ans_salt", aSalt)
+                .putString("ans_hash", PinLock.hash(PinLock.normalizeAnswer(answer), aSalt))
+        }
+        e.putInt("pin_fail", 0).putLong("pin_until", 0L).apply()
+        pinEnabled = true
+    }
+
+    fun setSecret(question: String, answer: String) {
+        val aSalt = PinLock.newSalt()
+        prefs.edit().putString("pin_q", question.trim()).putString("ans_salt", aSalt)
+            .putString("ans_hash", PinLock.hash(PinLock.normalizeAnswer(answer), aSalt)).apply()
+    }
+
+    fun disablePin() {
+        prefs.edit().remove("pin_hash").remove("pin_salt").remove("pin_len").remove("pin_q").remove("ans_hash").remove("ans_salt").apply()
+        pinEnabled = false
+        locked = false
+    }
+
+    fun setLockDelay(sec: Int) {
+        lockDelaySec = sec
+        prefs.edit().putInt("lock_delay", sec).apply()
+    }
+
+    fun setSecureScreen(on: Boolean) {
+        secureScreen = on
+        prefs.edit().putBoolean("secure_screen", on).apply()
+    }
+
+    // ---------- Библиотека ----------
+    val books = dao.books().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    private suspend fun addBookFile(tmp: File, displayName: String): BookEntity {
+        var format = Library.detectFormat(tmp)
+        var file = tmp
+        if (format == "fb2zip") {
+            val fb = File(tmp.parentFile, "${UUID.randomUUID()}.fb2")
+            Library.unzipFb2(tmp, fb)
+            tmp.delete()
+            file = fb
+            format = "fb2"
+        }
+        val target = File(Library.dir(app), "${UUID.randomUUID()}.$format")
+        file.renameTo(target)
+        val name = displayName.substringBeforeLast('.').ifBlank { "Книга" }
+        var title: String? = null
+        var author: String? = null
+        var total = 0
+        try {
+            if (format == "pdf") {
+                android.graphics.pdf.PdfRenderer(android.os.ParcelFileDescriptor.open(target, android.os.ParcelFileDescriptor.MODE_READ_ONLY))
+                    .use { total = it.pageCount }
+            } else {
+                val (meta, paras) = Library.parse(target, format)
+                title = meta.title; author = meta.author; total = paras.size
+                java.io.File(target.path + ".cache").bufferedWriter().use { w ->
+                    paras.forEach { w.write((if (it.heading) "H\t" else "P\t") + it.text.replace('\n', ' ')); w.newLine() }
+                }
+            }
+        } catch (e: Exception) {
+            target.delete()
+            File(target.path + ".cache").delete()
+            throw IllegalStateException("Не удалось прочитать «$displayName»: ${e.message ?: "неизвестный формат"}")
+        }
+        val book = BookEntity(
+            title = (title ?: name).take(200), author = (author ?: "").take(120), format = format,
+            fileName = target.name, sizeBytes = target.length(), addedAt = System.currentTimeMillis(), total = total,
+        )
+        return book.copy(id = dao.insertBook(book))
+    }
+
+    fun importBooks(uris: List<Uri>) = viewModelScope.launch {
+        var ok = 0
+        for (uri in uris) {
+            try {
+                withContext(Dispatchers.IO) {
+                    val name = app.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
+                        ?.use { c -> if (c.moveToFirst()) c.getString(0) else null } ?: "Книга"
+                    val tmp = File(Library.dir(app), "import_${UUID.randomUUID()}.tmp")
+                    app.contentResolver.openInputStream(uri)?.use { i -> tmp.outputStream().use { o -> i.copyTo(o) } }
+                        ?: error("Не удалось открыть файл")
+                    addBookFile(tmp, name)
+                }
+                ok++
+            } catch (e: Exception) {
+                messages.emit(e.message ?: "Не удалось добавить книгу")
+            }
+        }
+        if (ok > 0) messages.emit(if (ok == 1) "Книга добавлена" else "Добавлено книг: $ok")
+    }
+
+    fun importBookUrl(url: String) = viewModelScope.launch {
+        val u = url.trim()
+        if (!u.startsWith("http://") && !u.startsWith("https://")) {
+            messages.emit("Ссылка должна начинаться с http:// или https://")
+            return@launch
+        }
+        messages.emit("Скачиваем…")
+        try {
+            withContext(Dispatchers.IO) {
+                val tmp = File(Library.dir(app), "import_${UUID.randomUUID()}.tmp")
+                tmp.writeBytes(BibleApi.fetchBytes(u))
+                addBookFile(tmp, Uri.decode(u.substringAfterLast('/').substringBefore('?')).ifBlank { "Книга" })
+            }
+            messages.emit("Книга добавлена")
+        } catch (e: Exception) {
+            messages.emit("Не удалось загрузить: ${e.message ?: e.javaClass.simpleName}")
+        }
+    }
+
+    fun deleteBook(b: BookEntity) = viewModelScope.launch {
+        withContext(Dispatchers.IO) {
+            File(Library.dir(app), b.fileName).delete()
+            File(Library.dir(app), b.fileName + ".cache").delete()
+        }
+        dao.deleteBook(b.id)
+    }
+
+    fun renameBook(b: BookEntity, title: String, author: String) =
+        viewModelScope.launch { dao.updateBook(b.copy(title = title.trim().ifBlank { b.title }, author = author.trim())) }
+
+    suspend fun book(id: Long): BookEntity? = dao.book(id)
+
+    suspend fun loadBook(b: BookEntity): List<Library.Para> =
+        withContext(Dispatchers.IO) { Library.load(File(Library.dir(app), b.fileName), b.format) }
+
+    fun bookFile(b: BookEntity): File = File(Library.dir(app), b.fileName)
+
+    fun saveBookProgress(id: Long, index: Int, total: Int) = viewModelScope.launch { dao.saveProgress(id, index, total) }
 
     init {
         viewModelScope.launch {

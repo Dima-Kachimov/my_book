@@ -11,9 +11,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
     entities = [
         TranslationEntity::class, VerseEntity::class, HighlightEntity::class, NoteEntity::class,
         BookmarkEntity::class, SectionEntity::class, EntryEntity::class, EntryVerseEntity::class,
-        TagEntity::class, VerseTagEntity::class, MemoEntity::class,
+        TagEntity::class, VerseTagEntity::class, MemoEntity::class, BookEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = false,
 )
 abstract class AppDb : RoomDatabase() {
@@ -63,9 +63,19 @@ abstract class AppDb : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `books` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`title` TEXT NOT NULL, `author` TEXT NOT NULL, `format` TEXT NOT NULL, `fileName` TEXT NOT NULL, " +
+                        "`sizeBytes` INTEGER NOT NULL, `addedAt` INTEGER NOT NULL, `lastIndex` INTEGER NOT NULL, `total` INTEGER NOT NULL)"
+                )
+            }
+        }
+
         fun build(ctx: Context): AppDb =
             Room.databaseBuilder(ctx, AppDb::class.java, "diary.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .addCallback(object : Callback() {
                     override fun onCreate(db: SupportSQLiteDatabase) {
                         seedTags(db)

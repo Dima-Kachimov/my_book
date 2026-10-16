@@ -175,6 +175,23 @@ data class MemoEntity(
     val addedAt: Long,
 )
 
+/** Книга из библиотеки. Файл лежит в filesDir/library/[fileName]. */
+@Serializable
+@Entity(tableName = "books")
+data class BookEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val title: String,
+    val author: String = "",
+    /** epub | pdf | fb2 | txt */
+    val format: String,
+    val fileName: String,
+    val sizeBytes: Long = 0,
+    val addedAt: Long,
+    /** Позиция чтения: абзац (текст) или страница (PDF). */
+    val lastIndex: Int = 0,
+    val total: Int = 0,
+)
+
 @Serializable
 data class Backup(
     val version: Int = 1,
