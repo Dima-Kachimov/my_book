@@ -13,7 +13,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         BookmarkEntity::class, SectionEntity::class, EntryEntity::class, EntryVerseEntity::class,
         TagEntity::class, VerseTagEntity::class, MemoEntity::class, BookEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = false,
 )
 abstract class AppDb : RoomDatabase() {
@@ -73,9 +73,15 @@ abstract class AppDb : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE entries ADD COLUMN bodyRich TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         fun build(ctx: Context): AppDb =
             Room.databaseBuilder(ctx, AppDb::class.java, "diary.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                 .addCallback(object : Callback() {
                     override fun onCreate(db: SupportSQLiteDatabase) {
                         seedTags(db)

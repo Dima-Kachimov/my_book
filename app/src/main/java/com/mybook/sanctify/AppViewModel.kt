@@ -384,10 +384,10 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
 
     suspend fun loadEntry(id: Long) = dao.entry(id)
 
-    fun saveEntry(id: Long, title: String, body: String) = viewModelScope.launch {
+    fun saveEntry(id: Long, title: String, body: String, rich: String) = viewModelScope.launch {
         dao.entry(id)?.let {
-            if (it.title != title || it.body != body) {
-                dao.updateEntry(it.copy(title = title, body = body, updatedAt = System.currentTimeMillis()))
+            if (it.title != title || it.body != body || it.bodyRich != rich) {
+                dao.updateEntry(it.copy(title = title, body = body, bodyRich = rich, updatedAt = System.currentTimeMillis()))
             }
         }
     }

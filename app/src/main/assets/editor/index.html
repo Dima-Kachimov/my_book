@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<link rel="stylesheet" href="quill.snow.css">
+<style>
+:root{--bg:#F7F3EA;--card:#fff;--text:#1E2140;--muted:#6B6F8A;--accent:#2F3A8F;--line:#E6E0D0;--soft:#ECE8F7;--fs:19px}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);-webkit-tap-highlight-color:transparent}
+#app{display:flex;flex-direction:column;height:100%}
+#editor-wrap{flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column}
+#editor{flex:1;min-height:0;border:0!important;font-family:serif;font-size:var(--fs)}
+.ql-container.ql-snow{border:0}
+.ql-editor{padding:14px 18px 40px;color:var(--text);line-height:1.55;font-size:var(--fs);overflow-y:auto}
+.ql-editor.ql-blank::before{color:var(--muted);font-style:normal;left:18px;right:18px}
+.ql-editor blockquote{border-left:4px solid var(--accent);margin:8px 0;padding:2px 0 2px 14px;color:var(--muted)}
+.ql-editor pre.ql-syntax{background:var(--soft);color:var(--text);border-radius:8px;padding:10px}
+.ql-editor hr{border:0;border-top:2px solid var(--line);margin:16px 0}
+.ql-editor a{color:var(--accent)}
+.ql-editor h1{font-size:1.9em}.ql-editor h2{font-size:1.5em}.ql-editor h3{font-size:1.25em}
+#status{font:12px sans-serif;color:var(--muted);padding:3px 14px;border-top:1px solid var(--line);background:var(--bg)}
+/* панель инструментов — внизу, прокручивается по горизонтали */
+.ql-toolbar.ql-snow{border:0;border-top:1px solid var(--line);background:var(--card);padding:4px 6px;white-space:nowrap;overflow-x:auto;overflow-y:hidden;display:flex;flex-wrap:nowrap;align-items:center;-webkit-overflow-scrolling:touch}
+.ql-toolbar.ql-snow .ql-formats{display:flex;align-items:center;flex:none;margin-right:8px;padding-right:8px;border-right:1px solid var(--line)}
+.ql-toolbar.ql-snow .ql-formats:last-child{border-right:0}
+.ql-toolbar.ql-snow button{width:38px;height:38px;padding:7px;border-radius:8px}
+.ql-toolbar.ql-snow button.ql-active,.ql-toolbar.ql-snow .ql-picker-label.ql-active{background:var(--soft)}
+.ql-snow .ql-stroke{stroke:var(--text)}.ql-snow .ql-fill,.ql-snow .ql-stroke.ql-fill{fill:var(--text)}
+.ql-snow.ql-toolbar button:hover .ql-stroke,.ql-snow.ql-toolbar button.ql-active .ql-stroke{stroke:var(--accent)}
+.ql-snow.ql-toolbar button.ql-active .ql-fill{fill:var(--accent)}
+.ql-snow .ql-picker{color:var(--text);height:38px;font-size:14px}
+.ql-snow .ql-picker-label{padding:0 22px 0 8px;display:flex;align-items:center;height:38px;white-space:nowrap}
+.ql-snow .ql-picker-label svg{right:2px}
+.ql-snow .ql-picker.ql-font{width:150px}.ql-snow .ql-picker.ql-size{width:78px}.ql-snow .ql-picker.ql-header{width:156px}
+/* выпадающие списки открываются вверх */
+.ql-snow .ql-picker-options{position:fixed!important;top:auto!important;background:var(--card);border:1px solid var(--line)!important;box-shadow:0 -4px 14px #0003;max-height:46vh;overflow-y:auto;color:var(--text)}
+.ql-snow .ql-color-picker .ql-picker-options,.ql-snow .ql-icon-picker .ql-picker-options{width:200px}
+.ql-snow .ql-picker-item{padding:6px 8px}
+.ql-toolbar button.ql-undo::before{content:"↶";font-size:22px;color:var(--text)}
+.ql-toolbar button.ql-redo::before{content:"↷";font-size:22px;color:var(--text)}
+.ql-toolbar button.ql-divider::before{content:"—";font-size:22px;color:var(--text)}
+.ql-toolbar button.ql-undo,.ql-toolbar button.ql-redo,.ql-toolbar button.ql-divider{display:inline-flex;align-items:center;justify-content:center}
+/* подписи в выпадающих списках */
+.ql-snow .ql-picker.ql-font .ql-picker-label::before,.ql-snow .ql-picker.ql-font .ql-picker-item::before{content:"Без засечек"!important;white-space:nowrap}
+.ql-snow .ql-picker.ql-font [data-value="serif"]::before{content:"С засечками"!important;font-family:serif}
+.ql-snow .ql-picker.ql-font [data-value="monospace"]::before{content:"Моноширинный"!important;font-family:monospace}
+.ql-snow .ql-picker.ql-font [data-value="sans-serif-condensed"]::before{content:"Узкий"!important;font-family:sans-serif-condensed,sans-serif}
+.ql-snow .ql-picker.ql-font [data-value="cursive"]::before{content:"Рукописный"!important;font-family:cursive}
+.ql-snow .ql-picker.ql-font [data-value="sans-serif"]::before{content:"Без засечек"!important;font-family:sans-serif}
+.ql-snow .ql-picker.ql-size .ql-picker-label::before,.ql-snow .ql-picker.ql-size .ql-picker-item::before{content:"19"!important}
+.ql-snow .ql-picker.ql-size [data-value]::before{content:attr(data-value)!important}
+.ql-snow .ql-picker.ql-header .ql-picker-label::before,.ql-snow .ql-picker.ql-header .ql-picker-item::before{content:"Обычный текст"!important}
+.ql-snow .ql-picker.ql-header [data-value="1"]::before{content:"Заголовок 1"!important}
+.ql-snow .ql-picker.ql-header [data-value="2"]::before{content:"Заголовок 2"!important}
+.ql-snow .ql-picker.ql-header [data-value="3"]::before{content:"Заголовок 3"!important}
+.ql-snow .ql-tooltip{z-index:20;left:8px!important;max-width:calc(100% - 16px)}
+.ql-snow .ql-tooltip[data-mode=link]::before{content:"Ссылка:"}
+.ql-snow .ql-tooltip.ql-editing a.ql-action::after{content:"Сохранить"}
+.ql-snow .ql-tooltip a.ql-action::after{content:"Изменить"}
+.ql-snow .ql-tooltip a.ql-remove::before{content:"Убрать"}
+.ql-snow .ql-tooltip a.ql-preview{max-width:130px}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="editor-wrap"><div id="editor"></div></div>
+  <div id="status"></div>
+  <div id="toolbar">
+    <span class="ql-formats">
+      <button type="button" class="ql-undo" title="Отменить"></button>
+      <button type="button" class="ql-redo" title="Повторить"></button>
+    </span>
+    <span class="ql-formats">
+      <select class="ql-header">
+        <option selected></option><option value="1"></option><option value="2"></option><option value="3"></option>
+      </select>
+      <select class="ql-font">
+        <option value="sans-serif" selected></option><option value="serif"></option><option value="monospace"></option>
+        <option value="sans-serif-condensed"></option><option value="cursive"></option>
+      </select>
+      <select class="ql-size">
+        <option value="14px"></option><option value="16px"></option><option value="18px"></option>
+        <option value="19px" selected></option><option value="22px"></option><option value="26px"></option>
+        <option value="32px"></option><option value="40px"></option>
+      </select>
+    </span>
+    <span class="ql-formats">
+      <button class="ql-bold" title="Жирный"></button>
+      <button class="ql-italic" title="Курсив"></button>
+      <button class="ql-underline" title="Подчёркнутый"></button>
+      <button class="ql-strike" title="Зачёркнутый"></button>
+      <button class="ql-script" value="sub" title="Нижний индекс"></button>
+      <button class="ql-script" value="super" title="Верхний индекс"></button>
+    </span>
+    <span class="ql-formats">
+      <select class="ql-color" title="Цвет текста"></select>
+      <select class="ql-background" title="Выделение цветом"></select>
+    </span>
+    <span class="ql-formats">
+      <button class="ql-align" value="" title="По левому краю"></button>
+      <button class="ql-align" value="center" title="По центру"></button>
+      <button class="ql-align" value="right" title="По правому краю"></button>
+      <button class="ql-align" value="justify" title="По ширине"></button>
+    </span>
+    <span class="ql-formats">
+      <button class="ql-list" value="bullet" title="Маркированный список"></button>
+      <button class="ql-list" value="ordered" title="Нумерованный список"></button>
+      <button class="ql-list" value="check" title="Список задач"></button>
+      <button class="ql-indent" value="-1" title="Уменьшить отступ"></button>
+      <button class="ql-indent" value="+1" title="Увеличить отступ"></button>
+    </span>
+    <span class="ql-formats">
+      <button class="ql-blockquote" title="Цитата"></button>
+      <button class="ql-code-block" title="Код"></button>
+      <button class="ql-link" title="Ссылка"></button>
+      <button type="button" class="ql-divider" title="Разделитель"></button>
+      <button class="ql-clean" title="Очистить форматирование"></button>
+    </span>
+  </div>
+</div>
+<script src="quill.js"></script>
+<script>
+(function () {
+  // Стили сохраняем встроенными (inline), чтобы они переживали смену темы и экспорт.
+  var Font = Quill.import('attributors/style/font');
+  Font.whitelist = ['sans-serif', 'serif', 'monospace', 'sans-serif-condensed', 'cursive'];
+  Quill.register(Font, true);
+  var Size = Quill.import('attributors/style/size');
+  Size.whitelist = ['14px', '16px', '18px', '19px', '22px', '26px', '32px', '40px'];
+  Quill.register(Size, true);
+  Quill.register(Quill.import('attributors/style/align'), true);
+  Quill.register(Quill.import('attributors/style/color'), true);
+  Quill.register(Quill.import('attributors/style/background'), true);
+
+  var BlockEmbed = Quill.import('blots/block/embed');
+  function Divider() { return Reflect.construct(BlockEmbed, arguments, Divider); }
+  Divider.prototype = Object.create(BlockEmbed.prototype);
+  Object.setPrototypeOf(Divider, BlockEmbed);
+  Divider.blotName = 'divider';
+  Divider.tagName = 'hr';
+  Quill.register(Divider);
+
+  var quill = new Quill('#editor', {
+    theme: 'snow',
+    placeholder: 'Пишите здесь…',
+    modules: {
+      toolbar: {
+        container: '#toolbar',
+        handlers: {
+          divider: function () {
+            var r = quill.getSelection(true);
+            quill.insertEmbed(r.index, 'divider', true, 'user');
+            quill.setSelection(r.index + 1, 0, 'user');
+          }
+        }
+      },
+      history: { delay: 600, maxStack: 300, userOnly: true }
+    }
+  });
+
+  var toolbarEl = document.getElementById('toolbar');
+  function bindClick(sel, fn) {
+    var el = toolbarEl.querySelector(sel);
+    el.addEventListener('mousedown', function (e) { e.preventDefault(); });
+    el.addEventListener('click', function (e) { e.preventDefault(); fn(); });
+  }
+  bindClick('.ql-undo', function () { quill.history.undo(); });
+  bindClick('.ql-redo', function () { quill.history.redo(); });
+
+  // Выпадающие списки панели рисуем поверх (fixed), иначе их обрезает прокручиваемая панель.
+  toolbarEl.addEventListener('click', function (e) {
+    var label = e.target.closest ? e.target.closest('.ql-picker-label') : null;
+    if (!label) return;
+    setTimeout(function () {
+      var picker = label.parentNode;
+      if (!picker.classList.contains('ql-expanded')) return;
+      var opts = picker.querySelector('.ql-picker-options');
+      var r = label.getBoundingClientRect();
+      var left = Math.max(4, Math.min(r.left, window.innerWidth - opts.offsetWidth - 4));
+      opts.style.left = left + 'px';
+      opts.style.bottom = (window.innerHeight - r.top + 4) + 'px';
+      opts.style.top = 'auto';
+    }, 0);
+  });
+
+  var timer = null;
+  var ready = false;
+  function counts() {
+    var t = quill.getText().replace(/\n$/, '');
+    var words = t.trim() ? t.trim().split(/\s+/).length : 0;
+    document.getElementById('status').textContent = words + ' сл. · ' + t.length + ' зн.';
+  }
+  function flush() {
+    if (timer) { clearTimeout(timer); timer = null; }
+    if (!ready) return;
+    var rich = JSON.stringify(quill.getContents());
+    var text = quill.getText().replace(/\n$/, '');
+    if (window.Android && window.Android.onChange) window.Android.onChange(rich, text);
+  }
+  quill.on('text-change', function (delta, old, source) {
+    counts();
+    if (source !== 'user' || !ready) return;
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(flush, 120);
+  });
+  quill.on('selection-change', function (range) {
+    if (window.Android && window.Android.onFocus) window.Android.onFocus(!!range);
+  });
+
+  window.Editor = {
+    init: function (rich, plain, theme, fs) {
+      ready = false;
+      try {
+        if (rich) quill.setContents(JSON.parse(rich), 'silent');
+        else quill.setText(plain || '', 'silent');
+      } catch (e) { quill.setText(plain || '', 'silent'); }
+      quill.history.clear();
+      Editor.setTheme(theme, fs);
+      counts();
+      ready = true;
+      if (window.Android && window.Android.onReady) window.Android.onReady();
+    },
+    setTheme: function (t, fs) {
+      var r = document.documentElement.style;
+      if (t) {
+        r.setProperty('--bg', t.bg); r.setProperty('--card', t.card); r.setProperty('--text', t.text);
+        r.setProperty('--muted', t.muted); r.setProperty('--accent', t.accent);
+        r.setProperty('--line', t.line); r.setProperty('--soft', t.soft);
+      }
+      if (fs) r.setProperty('--fs', fs + 'px');
+    },
+    flush: flush,
+    getText: function () { return quill.getText().replace(/\n$/, ''); },
+    getRich: function () { return JSON.stringify(quill.getContents()); },
+    focus: function () { quill.focus(); }
+  };
+  if (window.Android && window.Android.onLoaded) window.Android.onLoaded();
+})();
+</script>
+</body>
+</html>

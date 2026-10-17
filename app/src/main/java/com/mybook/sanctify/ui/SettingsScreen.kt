@@ -196,7 +196,8 @@ fun SettingsScreen(vm: AppViewModel, nav: NavController) {
                 "Переводы: getBible (getbible.net) и репозиторий bibleapi; тексты принадлежат их правообладателям.\n" +
                     "Перекрёстные ссылки: OpenBible.info, лицензия CC BY.\n" +
                     "Слова оригинала и словарь: STEPBible.org / Tyndale House Cambridge, лицензия CC BY 4.0 " +
-                    "(лексиконы основаны на Abbott-Smith и BDB).",
+                    "(лексиконы основаны на Abbott-Smith и BDB).\n" +
+                    "Редактор текста записей: Quill (лицензия BSD-3).",
                 color = pal.muted, fontSize = 12.sp,
             )
             Spacer(Modifier.height(24.dp))

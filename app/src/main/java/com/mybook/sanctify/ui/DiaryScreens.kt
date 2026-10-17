@@ -179,66 +179,91 @@ fun EntryScreen(vm: AppViewModel, nav: NavController, id: Long) {
     var loaded by remember(id) { mutableStateOf(false) }
     var title by remember(id) { mutableStateOf("") }
     var body by remember(id) { mutableStateOf("") }
+    var rich by remember(id) { mutableStateOf("") }
+    var initialRich by remember(id) { mutableStateOf("") }
+    var initialPlain by remember(id) { mutableStateOf("") }
+    var editorFocused by remember { mutableStateOf(false) }
+    var showTop by remember { mutableStateOf(false) }
     val verses by remember(id) { vm.entryVerses(id) }.collectAsStateWithLifecycle(emptyList())
     var addVerse by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(id) {
-        vm.loadEntry(id)?.let { title = it.title; body = it.body }
+        vm.loadEntry(id)?.let {
+            title = it.title; body = it.body; rich = it.bodyRich
+            initialRich = it.bodyRich; initialPlain = it.body
+        }
         loaded = true
     }
     // Автосохранение с небольшой задержкой + сохранение при выходе.
-    LaunchedEffect(title, body, loaded) {
+    LaunchedEffect(title, body, rich, loaded) {
         if (loaded) {
             delay(600)
-            vm.saveEntry(id, title, body)
+            vm.saveEntry(id, title, body, rich)
         }
     }
-    val latest by rememberUpdatedState(Triple(loaded, title, body))
+    val latest by rememberUpdatedState(arrayOf(loaded, title, body, rich))
     DisposableEffect(id) {
-        onDispose { if (latest.first) vm.saveEntry(id, latest.second, latest.third) }
+        onDispose { if (latest[0] as Boolean) vm.saveEntry(id, latest[1] as String, latest[2] as String, latest[3] as String) }
     }
 
     Column(Modifier.fillMaxSize().background(pal.bg)) {
         ScreenHeader("Запись", onBack = { nav.popBackStack() }) {
             IconButton(onClick = { confirmDelete = true }) { Icon(Icons.Default.Delete, "Удалить", tint = pal.text) }
         }
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(12.dp)) {
-            OutlinedTextField(
-                value = title, onValueChange = { title = it }, label = { Text("Заголовок") },
-                singleLine = true, modifier = Modifier.fillMaxWidth(),
-            )
-            Spacer(Modifier.height(12.dp))
-            SectionLabel("Стихи")
-            verses.forEach { v ->
-                ClickableCard(onClick = {
-                    vm.setTranslation(v.translationId)
-                    vm.goTo(v.book, v.chapter, v.verseStart)
-                    nav.openReader()
-                }) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            refText(v.book, v.chapter, v.verseStart, v.verseEnd) + " · " + v.translationId.uppercase(),
-                            color = pal.heading, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f),
-                        )
-                        IconButton(onClick = { vm.deleteEntryVerse(v.id) }) {
-                            Icon(Icons.Default.Close, "Убрать", tint = pal.text)
+        // Пока набирается текст, заголовок и стихи сворачиваются, чтобы освободить место.
+        if (editorFocused && !showTop) {
+            Row(
+                Modifier.fillMaxWidth().clickable { showTop = true }.padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    title.ifBlank { "Без названия" } + if (verses.isNotEmpty()) " · стихов: ${verses.size}" else "",
+                    color = pal.muted, fontSize = 13.sp, maxLines = 1, modifier = Modifier.weight(1f),
+                )
+                Text("изменить ▾", color = pal.heading, fontSize = 13.sp)
+            }
+            Box(Modifier.fillMaxWidth().height(1.dp).background(pal.line))
+        } else {
+            Column(Modifier.heightIn(max = 300.dp).verticalScroll(rememberScrollState()).padding(12.dp)) {
+                OutlinedTextField(
+                    value = title, onValueChange = { title = it }, label = { Text("Заголовок") },
+                    singleLine = true, modifier = Modifier.fillMaxWidth(),
+                )
+                if (verses.isNotEmpty()) SectionLabel("Стихи")
+                verses.forEach { v ->
+                    ClickableCard(onClick = {
+                        vm.setTranslation(v.translationId)
+                        vm.goTo(v.book, v.chapter, v.verseStart)
+                        nav.openReader()
+                    }) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                refText(v.book, v.chapter, v.verseStart, v.verseEnd) + " · " + v.translationId.uppercase(),
+                                color = pal.heading, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f),
+                            )
+                            IconButton(onClick = { vm.deleteEntryVerse(v.id) }) {
+                                Icon(Icons.Default.Close, "Убрать", tint = pal.text)
+                            }
                         }
+                        Text(v.text, color = pal.text, fontSize = 17.sp)
                     }
-                    Text(v.text, color = pal.text, fontSize = 17.sp)
+                }
+                TextButton(onClick = { addVerse = true }) {
+                    Icon(Icons.Default.Add, null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("Добавить стих")
                 }
             }
-            TextButton(onClick = { addVerse = true }) {
-                Icon(Icons.Default.Add, null)
-                Spacer(Modifier.width(6.dp))
-                Text("Добавить стих")
-            }
-            Spacer(Modifier.height(8.dp))
-            SectionLabel("Мои мысли")
-            OutlinedTextField(
-                value = body, onValueChange = { body = it },
-                modifier = Modifier.fillMaxWidth().heightIn(min = 220.dp),
+            Box(Modifier.fillMaxWidth().height(1.dp).background(pal.line))
+        }
+        if (loaded) {
+            RichTextEditor(
+                initialRich = initialRich, initialPlain = initialPlain, fontSize = vm.fontSize,
+                onChange = { r, t -> rich = r; body = t },
+                onFocusChange = { f -> editorFocused = f; if (f) showTop = false },
+                modifier = Modifier.weight(1f).fillMaxWidth(),
             )
         }
     }
