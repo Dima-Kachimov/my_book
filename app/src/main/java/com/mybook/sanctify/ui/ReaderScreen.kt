@@ -316,7 +316,6 @@ private fun ReaderTopBar(
                         onClick = { moreMenu = false; parallelDialog = true },
                     )
                     DropdownMenuItem(text = { Text("Переводы") }, onClick = { moreMenu = false; nav.navigate("translations") })
-                    DropdownMenuItem(text = { Text("Настройки") }, onClick = { moreMenu = false; nav.navigate("settings") })
                 }
             }
         }

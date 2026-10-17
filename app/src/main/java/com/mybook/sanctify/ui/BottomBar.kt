@@ -11,6 +11,7 @@ import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.LibraryBooks
 import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Today
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
@@ -34,6 +35,7 @@ private val navItems = listOf(
     NavItem("library", "Книги", Icons.Default.LibraryBooks),
     NavItem("diary", "Дневник", Icons.Default.EditNote),
     NavItem("marks", "Пометки", Icons.Default.Bookmark),
+    NavItem("settings", "Настройки", Icons.Default.Settings),
 )
 
 val bottomBarRoutes = navItems.map { it.route }
@@ -43,7 +45,7 @@ val bottomBarRoutes = navItems.map { it.route }
 fun AppBottomBar(route: String?, onNavigate: (String) -> Unit) {
     val pal = LocalPalette.current
     Box(
-        Modifier.fillMaxWidth().background(pal.bg).padding(horizontal = 12.dp, vertical = 6.dp),
+        Modifier.fillMaxWidth().background(pal.bg).padding(horizontal = 8.dp, vertical = 6.dp),
         contentAlignment = Alignment.Center,
     ) {
         Surface(
@@ -68,7 +70,7 @@ fun AppBottomBar(route: String?, onNavigate: (String) -> Unit) {
                                 indication = null,
                                 onClick = { onNavigate(item.route) },
                             )
-                            .padding(horizontal = if (selected) 11.dp else 12.dp, vertical = 8.dp),
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Icon(
@@ -77,8 +79,8 @@ fun AppBottomBar(route: String?, onNavigate: (String) -> Unit) {
                             modifier = Modifier.size(21.dp),
                         )
                         if (selected) {
-                            Spacer(Modifier.width(6.dp))
-                            Text(item.label, color = pal.heading, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Spacer(Modifier.width(5.dp))
+                            Text(item.label, color = pal.heading, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1)
                         }
                     }
                 }

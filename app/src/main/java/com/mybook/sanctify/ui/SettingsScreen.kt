@@ -63,7 +63,7 @@ fun SettingsScreen(vm: AppViewModel, nav: NavController) {
     pinDialog?.let { PinDialogs(vm, it) { pinDialog = null } }
 
     Column(Modifier.fillMaxSize().background(pal.bg)) {
-        ScreenHeader("Настройки", onBack = { nav.popBackStack() })
+        ScreenHeader("Настройки")
         Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp)) {
             Label("Предпросмотр")
             Surface(color = pal.card, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
