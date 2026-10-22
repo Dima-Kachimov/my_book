@@ -405,6 +405,25 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
 
     fun deleteEntryVerse(id: Long) = viewModelScope.launch { dao.deleteEntryVerse(id) }
 
+    // ---------- Выбор места из Библии для вставки в запись ----------
+    /** Режим выбора: Библия открыта из записи/документа. entryId > 0 — запись (можно прикрепить стих). */
+    data class BiblePick(val entryId: Long, val caret: Int)
+    class PendingQuote(val text: String, val ref: String, val caret: Int)
+
+    var biblePick by mutableStateOf<BiblePick?>(null)
+        private set
+    var pendingQuote by mutableStateOf<PendingQuote?>(null)
+        private set
+
+    fun startBiblePick(entryId: Long, caret: Int) { biblePick = BiblePick(entryId, caret) }
+    fun cancelBiblePick() { biblePick = null }
+    fun finishBiblePick(text: String, ref: String) {
+        val pick = biblePick ?: return
+        pendingQuote = PendingQuote(text, ref, pick.caret)
+        biblePick = null
+    }
+    fun takePendingQuote(): PendingQuote? = pendingQuote.also { pendingQuote = null }
+
     suspend fun addEntryVerse(entryId: Long, book: Int, chapter: Int, from: Int, to: Int): Boolean {
         val vs = dao.range(trId.value, book, chapter, from, to)
         if (vs.isEmpty()) {

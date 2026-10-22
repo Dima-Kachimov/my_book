@@ -214,6 +214,12 @@ fun EntryScreen(vm: AppViewModel, nav: NavController, id: Long) {
     val scope = rememberCoroutineScope()
     val controller = remember { RichEditorController() }
     val pickImage = rememberImageInserter(vm, controller)
+    val openBible = {
+        controller.getCaret { caret ->
+            vm.startBiblePick(id, caret)
+            nav.navigate("reader") { launchSingleTop = true }
+        }
+    }
 
     LaunchedEffect(id) {
         vm.loadEntry(id)?.let {
@@ -283,10 +289,17 @@ fun EntryScreen(vm: AppViewModel, nav: NavController, id: Long) {
                         Text(v.text, color = pal.text, fontSize = 17.sp)
                     }
                 }
-                TextButton(onClick = { addVerse = true }) {
-                    Icon(Icons.Default.Add, null)
-                    Spacer(Modifier.width(6.dp))
-                    Text("Добавить стих")
+                Row {
+                    TextButton(onClick = { addVerse = true }) {
+                        Icon(Icons.Default.Add, null)
+                        Spacer(Modifier.width(6.dp))
+                        Text("Добавить стих")
+                    }
+                    TextButton(onClick = { openBible() }) {
+                        Icon(Icons.Default.MenuBook, null)
+                        Spacer(Modifier.width(6.dp))
+                        Text("Из Библии")
+                    }
                 }
             }
             Box(Modifier.fillMaxWidth().height(1.dp).background(pal.line))
@@ -297,6 +310,8 @@ fun EntryScreen(vm: AppViewModel, nav: NavController, id: Long) {
                 onChange = { r, t -> rich = r; body = t },
                 onFocusChange = { f -> editorFocused = f; if (f) showTop = false },
                 onPickImage = pickImage,
+                onPickBible = { openBible() },
+                onReady = { vm.takePendingQuote()?.let { controller.insertQuote(it.text, it.ref, it.caret) } },
                 modifier = Modifier.weight(1f).fillMaxWidth(),
             )
         }

@@ -144,6 +144,7 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--text);-webkit-ta
       <button class="ql-clean" title="Очистить форматирование"></button>
     </span>
     <span class="ql-formats">
+      <button type="button" class="ql-x ql-bible" title="Место из Библии"><svg viewBox="0 0 24 24"><path d="M5 4.5A1.5 1.5 0 0 1 6.5 3H19v16H6.5A1.5 1.5 0 0 0 5 20.5z"/><path d="M5 20.5A1.5 1.5 0 0 0 6.5 22H19v-3M12 6.5v7M9 9.5h6"/></svg></button>
       <button type="button" class="ql-x ql-img" title="Вставить картинку"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M4 18l5-5 4 4 3-3 4 4"/></svg></button>
       <button type="button" class="ql-x ql-tbl" title="Таблица"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="1.5"/><path d="M3 10h18M3 15h18M9 4v16M15 4v16"/></svg></button>
       <button type="button" class="ql-x ql-lh" title="Межстрочный интервал"><svg viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M4 8V4M4 16v4M2.5 5.5L4 4l1.5 1.5M2.5 18.5L4 20l1.5-1.5"/></svg></button>
@@ -259,6 +260,7 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--text);-webkit-ta
     el.addEventListener('mousedown', function (e) { e.preventDefault(); });
     el.addEventListener('click', function (e) { e.preventDefault(); fn(el); });
   }
+  bindX('.ql-bible', function () { if (window.Android && window.Android.pickBible) window.Android.pickBible(); });
   bindX('.ql-img', function () { if (window.Android && window.Android.pickImage) window.Android.pickImage(); });
   bindX('.ql-tbl', function (el) {
     showMenu(el, [
@@ -389,6 +391,23 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--text);-webkit-ta
         r.setProperty('--line', t.line); r.setProperty('--soft', t.soft);
       }
       if (fs) r.setProperty('--fs', fs + 'px');
+    },
+    getCaret: function () {
+      var r = quill.getSelection() || (quill.selection && quill.selection.savedRange);
+      return r ? r.index : -1;
+    },
+    /** Вставляет цитату «текст» — ссылка отдельным абзацем-цитатой в позицию index (или в конец). */
+    insertQuote: function (text, ref, index) {
+      var len = quill.getLength();
+      var i = (index == null || index < 0 || index > len - 1) ? len - 1 : index;
+      var prev = i > 0 ? quill.getText(i - 1, 1) : '\n';
+      if (prev !== '\n') { quill.insertText(i, '\n', 'user'); i += 1; }
+      quill.insertText(i, '«' + text + '»', { italic: true }, 'user');
+      var p = i + text.length + 2;
+      quill.insertText(p, ' — ' + ref, { bold: true }, 'user');
+      p += ref.length + 3;
+      quill.insertText(p, '\n', { blockquote: true }, 'user');
+      quill.setSelection(p + 1, 0, 'user');
     },
     insertImage: function (url) {
       var r = quill.getSelection(true);

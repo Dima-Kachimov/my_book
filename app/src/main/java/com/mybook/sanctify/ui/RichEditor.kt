@@ -40,6 +40,15 @@ class RichEditorController {
         web?.evaluateJavascript("Editor.insertImage(${JSONObject.quote(url)})", null)
     }
 
+    fun getCaret(callback: (Int) -> Unit) {
+        val w = web ?: return callback(-1)
+        w.evaluateJavascript("Editor.getCaret()") { callback(it?.trim()?.toIntOrNull() ?: -1) }
+    }
+
+    fun insertQuote(text: String, ref: String, index: Int) {
+        web?.evaluateJavascript("Editor.insertQuote(${JSONObject.quote(text)}, ${JSONObject.quote(ref)}, $index)", null)
+    }
+
     fun importDocx(url: String) {
         web?.evaluateJavascript(
             "Editor.importDocx(${JSONObject.quote(url)}).catch(function(e){Android.onError('Не удалось открыть документ: ' + e)})", null,
@@ -96,6 +105,7 @@ fun RichTextEditor(
     onChange: (rich: String, text: String) -> Unit,
     onFocusChange: (Boolean) -> Unit,
     onPickImage: () -> Unit,
+    onPickBible: () -> Unit = {},
     modifier: Modifier = Modifier,
     onMessage: (String) -> Unit = {},
     onReady: () -> Unit = {},
@@ -104,6 +114,7 @@ fun RichTextEditor(
     val change by rememberUpdatedState(onChange)
     val focus by rememberUpdatedState(onFocusChange)
     val pick by rememberUpdatedState(onPickImage)
+    val pickBible by rememberUpdatedState(onPickBible)
     val message by rememberUpdatedState(onMessage)
     val readyCb by rememberUpdatedState(onReady)
     var ready by remember { mutableStateOf(false) }
@@ -150,6 +161,11 @@ fun RichTextEditor(
                     @JavascriptInterface
                     fun pickImage() {
                         post { pick() }
+                    }
+
+                    @JavascriptInterface
+                    fun pickBible() {
+                        post { pickBible() }
                     }
 
                     /** Картинки из импортируемого .docx: сохраняются в хранилище, возвращается адрес. */

@@ -105,8 +105,15 @@ fun DocumentScreen(vm: AppViewModel, nav: NavController, id: Long) {
                 onChange = { r, t -> rich = r; text = t },
                 onFocusChange = { },
                 onPickImage = pickImage,
+                onPickBible = {
+                    controller.getCaret { caret ->
+                        vm.startBiblePick(0, caret)
+                        nav.navigate("reader") { launchSingleTop = true }
+                    }
+                },
                 onMessage = { android.widget.Toast.makeText(ctx, it, android.widget.Toast.LENGTH_LONG).show() },
                 onReady = {
+                    vm.takePendingQuote()?.let { controller.insertQuote(it.text, it.ref, it.caret) }
                     // Документ, добавленный файлом, открывается в редакторе при первом входе
                     if (a.docRich.isBlank() && a.fileName.isNotBlank()) {
                         val ext = a.fileName.substringAfterLast('.', "").lowercase()

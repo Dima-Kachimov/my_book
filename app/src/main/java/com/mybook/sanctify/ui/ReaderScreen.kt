@@ -75,10 +75,25 @@ fun ReaderScreen(vm: AppViewModel, nav: NavController) {
     var sheetVerse by remember { mutableStateOf<VerseEntity?>(null) }
     var showTags by remember { mutableStateOf(false) }
 
+    val pick = vm.biblePick
     BackHandler(enabled = selected.isNotEmpty()) { selected = emptySet() }
+    BackHandler(enabled = pick != null && selected.isEmpty()) { vm.cancelBiblePick(); nav.popBackStack() }
+    DisposableEffect(Unit) { onDispose { vm.cancelBiblePick() } }
 
     Column(Modifier.fillMaxSize().background(pal.bg)) {
         ReaderTopBar(vm, nav, translations, trId, pos, parallelId)
+        if (pick != null) {
+            Row(
+                Modifier.fillMaxWidth().background(pal.verseNum.copy(alpha = 0.16f)).padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "Выберите стихи (нажмите на номера) — они попадут в запись",
+                    color = pal.text, fontSize = 13.sp, modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = { vm.cancelBiblePick(); nav.popBackStack() }) { Text("Отмена") }
+            }
+        }
         Box(Modifier.weight(1f)) {
             if (translations.isEmpty()) {
                 EmptyBible(nav)
@@ -143,7 +158,35 @@ fun ReaderScreen(vm: AppViewModel, nav: NavController) {
                 }
             }
         }
-        if (selected.isNotEmpty()) {
+        if (selected.isNotEmpty() && pick != null) {
+            val ref = refText(pos.book, pos.chapter, selected.min(), selected.max()) + " · " + trId.uppercase()
+            val text = verses.filter { it.verse in selected }.joinToString(" ") { it.text }
+            Column(
+                Modifier.fillMaxWidth().shadow(12.dp).background(pal.card).padding(16.dp),
+            ) {
+                Text(ref, color = pal.heading, fontWeight = FontWeight.Bold)
+                Text(text, color = pal.muted, fontSize = 14.sp, maxLines = 3, modifier = Modifier.padding(vertical = 4.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = {
+                        vm.finishBiblePick(text, ref)
+                        selected = emptySet()
+                        nav.popBackStack()
+                    }, modifier = Modifier.weight(1f)) { Text("Вставить в текст") }
+                    if (pick.entryId > 0) {
+                        OutlinedButton(onClick = {
+                            val entry = pick.entryId
+                            val b = pos.book; val c = pos.chapter; val f = selected.min(); val t = selected.max()
+                            scope.launch {
+                                vm.addEntryVerse(entry, b, c, f, t)
+                                vm.cancelBiblePick()
+                                selected = emptySet()
+                                nav.popBackStack()
+                            }
+                        }, modifier = Modifier.weight(1f)) { Text("Прикрепить") }
+                    }
+                }
+            }
+        } else if (selected.isNotEmpty()) {
             SelectionBar(
                 ref = refText(pos.book, pos.chapter, selected.min(), selected.max()),
                 preview = verses.filter { it.verse in selected }.joinToString(" ") { it.text },
