@@ -56,6 +56,7 @@ object BackupManager {
         sections = dao.listSections(), entries = dao.listEntries(), entryVerses = dao.listEntryVerses(),
         highlights = dao.listHighlights(), notes = dao.listNotes(), bookmarks = dao.listBookmarks(),
         tags = dao.listTags(), verseTags = dao.listVerseTags(), memos = dao.listMemos(),
+        attachments = dao.listAttachments(),
     )
 
     private fun exportPrefs(ctx: Context): List<PrefItem> = prefs(ctx).all.mapNotNull { (k, v) ->
@@ -85,7 +86,7 @@ object BackupManager {
     }
 
     /** Записывает полную копию в [out]. */
-    suspend fun writeZip(ctx: Context, out: OutputStream, includeBooks: Boolean, includeBibles: Boolean) {
+    suspend fun writeZip(ctx: Context, out: OutputStream, includeBooks: Boolean, includeBibles: Boolean, includeMedia: Boolean = true) {
         val dao = (ctx.applicationContext as App).db.dao()
         val books = if (includeBooks) dao.listBooks() else emptyList()
         val full = FullBackup(db = buildDb(dao), prefs = exportPrefs(ctx), books = books)
@@ -99,6 +100,13 @@ object BackupManager {
                 z.putNextEntry(ZipEntry("books/${b.fileName}"))
                 f.inputStream().use { it.copyTo(z) }
                 z.closeEntry()
+            }
+            if (includeMedia) {
+                Media.dir(ctx).listFiles()?.filter { it.isFile }?.forEach { f ->
+                    z.putNextEntry(ZipEntry("media/${f.name}"))
+                    f.inputStream().use { it.copyTo(z) }
+                    z.closeEntry()
+                }
             }
             if (includeBibles) {
                 dao.listTranslationsOnce().forEachIndexed { i, t ->
@@ -135,6 +143,10 @@ object BackupManager {
                         name.startsWith("books/") && !name.contains("..") -> {
                             val f = File(Library.dir(ctx), name.substringAfter("books/"))
                             f.outputStream().use { z.copyTo(it) }
+                        }
+                        name.startsWith("media/") -> {
+                            val safe = name.substringAfter("media/").substringAfterLast('/')
+                            if (safe.isNotBlank()) File(Media.dir(ctx), safe).outputStream().use { z.copyTo(it) }
                         }
                         name.startsWith("bibles/") -> restoreBible(dao, z)
                     }
@@ -181,19 +193,20 @@ object BackupManager {
             dao.putHighlights(b.highlights); dao.putNotes(b.notes); dao.putBookmarks(b.bookmarks)
             if (b.tags.isNotEmpty()) { dao.putTags(b.tags); dao.putVerseTags(b.verseTags) }
             dao.putMemos(b.memos)
+            dao.putAttachments(b.attachments)
             if (replaceBooks) { dao.clearBooks(); dao.putBooks(books) }
         }
     }
 
     // ---------- автокопия ----------
-    private suspend fun writeToFolder(ctx: Context, tree: Uri, includeBooks: Boolean, includeBibles: Boolean) {
+    private suspend fun writeToFolder(ctx: Context, tree: Uri, includeBooks: Boolean, includeBibles: Boolean, includeMedia: Boolean) {
         val cr = ctx.contentResolver
         val treeId = DocumentsContract.getTreeDocumentId(tree)
         val dir = DocumentsContract.buildDocumentUriUsingTree(tree, treeId)
         val name = PREFIX + SimpleDateFormat("yyyy-MM-dd_HHmm", Locale.US).format(Date()) + ".zip"
         val doc = DocumentsContract.createDocument(cr, dir, "application/zip", name) ?: error("Не удалось создать файл")
         val out = cr.openOutputStream(doc) ?: error("Не удалось записать файл")
-        writeZip(ctx, out, includeBooks, includeBibles)
+        writeZip(ctx, out, includeBooks, includeBibles, includeMedia)
 
         val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, treeId)
         val old = ArrayList<Pair<String, String>>()
@@ -216,7 +229,7 @@ object BackupManager {
     suspend fun runNow(ctx: Context): Boolean {
         val p = prefs(ctx)
         val tree = p.getString("backup_tree", null)?.let { Uri.parse(it) } ?: return false
-        writeToFolder(ctx, tree, p.getBoolean("bk_books", true), p.getBoolean("bk_bibles", true))
+        writeToFolder(ctx, tree, p.getBoolean("bk_books", true), p.getBoolean("bk_bibles", true), p.getBoolean("bk_media", true))
         p.edit().putLong("backup_last", System.currentTimeMillis()).apply()
         return true
     }

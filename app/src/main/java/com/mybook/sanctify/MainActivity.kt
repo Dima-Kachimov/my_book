@@ -89,6 +89,9 @@ private fun AppContent(vm: AppViewModel) {
             composable("book/{id}", arguments = listOf(navArgument("id") { type = NavType.LongType })) {
                 BookReaderScreen(vm, nav, it.arguments!!.getLong("id"))
             }
+            composable("doc/{id}", arguments = listOf(navArgument("id") { type = NavType.LongType })) {
+                DocumentScreen(vm, nav, it.arguments!!.getLong("id"))
+            }
             composable("diary") { DiaryScreen(vm, nav) }
             composable("marks") { MarksScreen(vm, nav) }
             composable("picker") { PickerScreen(vm, nav) }

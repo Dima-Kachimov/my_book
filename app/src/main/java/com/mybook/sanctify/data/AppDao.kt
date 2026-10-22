@@ -215,6 +215,31 @@ interface AppDao {
     @Query("SELECT * FROM sections WHERE id = :id")
     suspend fun section(id: Long): SectionEntity?
 
+    // ---------- Вложения ----------
+    @Query("SELECT * FROM attachments WHERE entryId = :entryId ORDER BY id")
+    fun attachments(entryId: Long): Flow<List<AttachmentEntity>>
+
+    @Query("SELECT * FROM attachments WHERE entryId = :entryId")
+    suspend fun attachmentsOf(entryId: Long): List<AttachmentEntity>
+
+    @Query("SELECT a.* FROM attachments a JOIN entries e ON a.entryId = e.id WHERE e.sectionId = :sectionId")
+    suspend fun attachmentsInSection(sectionId: Long): List<AttachmentEntity>
+
+    @Query("SELECT * FROM attachments WHERE id = :id")
+    suspend fun attachment(id: Long): AttachmentEntity?
+
+    @Insert
+    suspend fun insertAttachment(a: AttachmentEntity): Long
+
+    @Update
+    suspend fun updateAttachment(a: AttachmentEntity)
+
+    @Query("DELETE FROM attachments WHERE id = :id")
+    suspend fun deleteAttachment(id: Long)
+
+    @Query("SELECT * FROM attachments") suspend fun listAttachments(): List<AttachmentEntity>
+    @Insert(onConflict = REPLACE) suspend fun putAttachments(l: List<AttachmentEntity>)
+
     // ---------- Библиотека ----------
     @Query("SELECT * FROM books ORDER BY addedAt DESC")
     fun books(): Flow<List<BookEntity>>

@@ -60,10 +60,36 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--text);-webkit-ta
 .ql-snow .ql-tooltip a.ql-action::after{content:"Изменить"}
 .ql-snow .ql-tooltip a.ql-remove::before{content:"Убрать"}
 .ql-snow .ql-tooltip a.ql-preview{max-width:130px}
+
+.ql-editor img{max-width:100%;height:auto;border-radius:4px}
+.ql-editor table{border-collapse:collapse;width:100%;margin:8px 0;table-layout:fixed}
+.ql-editor td{border:1px solid var(--muted);padding:6px 8px;vertical-align:top;word-wrap:break-word}
+.ql-editor td:focus{outline:2px solid var(--accent)}
+.popup{position:fixed;z-index:50;background:var(--card);color:var(--text);border:1px solid var(--line);border-radius:12px;box-shadow:0 -4px 18px #0004;padding:4px;max-height:60vh;overflow-y:auto;min-width:190px}
+.popup button{display:block;width:100%;text-align:left;border:0;background:none;color:var(--text);font:15px sans-serif;padding:11px 12px;border-radius:8px}
+.popup button:active{background:var(--soft)}
+.popup .sep{height:1px;background:var(--line);margin:4px 0}
+#findbar{display:none;background:var(--card);border-bottom:1px solid var(--line);padding:6px 8px;font:14px sans-serif}
+#findbar.on{display:block}
+#findbar .row{display:flex;gap:6px;align-items:center;margin:3px 0}
+#findbar input{flex:1;min-width:0;border:1px solid var(--line);border-radius:8px;padding:8px;background:var(--bg);color:var(--text);font:15px sans-serif}
+#findbar button{border:0;background:var(--soft);color:var(--accent);border-radius:8px;padding:8px 10px;font:14px sans-serif;font-weight:bold}
+#fcount{color:var(--muted);font-size:12px;min-width:44px;text-align:right}
+.ql-toolbar button.ql-x svg{width:20px;height:20px}
+.ql-toolbar button.ql-x svg *{fill:none;stroke:var(--text);stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+@media print{
+  #toolbar,#status,#findbar{display:none!important}
+  html,body,#app,#editor-wrap,#editor,.ql-container,.ql-editor{height:auto!important;overflow:visible!important;position:static!important;display:block!important;background:#fff!important;color:#000!important}
+  .ql-editor{padding:0!important}
+}
 </style>
 </head>
 <body>
 <div id="app">
+  <div id="findbar">
+    <div class="row"><input id="f1" placeholder="Найти"><span id="fcount"></span><button id="fprev" type="button">↑</button><button id="fnext" type="button">↓</button><button id="fclose" type="button">✕</button></div>
+    <div class="row"><input id="f2" placeholder="Заменить на"><button id="frep" type="button">Заменить</button><button id="fall" type="button">Все</button></div>
+  </div>
   <div id="editor-wrap"><div id="editor"></div></div>
   <div id="status"></div>
   <div id="toolbar">
@@ -117,9 +143,16 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--text);-webkit-ta
       <button type="button" class="ql-divider" title="Разделитель"></button>
       <button class="ql-clean" title="Очистить форматирование"></button>
     </span>
+    <span class="ql-formats">
+      <button type="button" class="ql-x ql-img" title="Вставить картинку"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M4 18l5-5 4 4 3-3 4 4"/></svg></button>
+      <button type="button" class="ql-x ql-tbl" title="Таблица"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="1.5"/><path d="M3 10h18M3 15h18M9 4v16M15 4v16"/></svg></button>
+      <button type="button" class="ql-x ql-lh" title="Межстрочный интервал"><svg viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M4 8V4M4 16v4M2.5 5.5L4 4l1.5 1.5M2.5 18.5L4 20l1.5-1.5"/></svg></button>
+      <button type="button" class="ql-x ql-find" title="Найти и заменить"><svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5"/></svg></button>
+    </span>
   </div>
 </div>
 <script src="quill.js"></script>
+<script src="mammoth.browser.min.js"></script>
 <script>
 (function () {
   // Стили сохраняем встроенными (inline), чтобы они переживали смену темы и экспорт.
@@ -132,6 +165,12 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--text);-webkit-ta
   Quill.register(Quill.import('attributors/style/align'), true);
   Quill.register(Quill.import('attributors/style/color'), true);
   Quill.register(Quill.import('attributors/style/background'), true);
+
+  var Parchment = Quill.import('parchment');
+  var LineHeight = new Parchment.StyleAttributor('lineheight', 'line-height', {
+    scope: Parchment.Scope.BLOCK, whitelist: ['1', '1.15', '1.5', '2', '2.5']
+  });
+  Quill.register(LineHeight, true);
 
   var BlockEmbed = Quill.import('blots/block/embed');
   function Divider() { return Reflect.construct(BlockEmbed, arguments, Divider); }
@@ -155,6 +194,7 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--text);-webkit-ta
           }
         }
       },
+      table: true,
       history: { delay: 600, maxStack: 300, userOnly: true }
     }
   });
@@ -183,6 +223,126 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--text);-webkit-ta
       opts.style.top = 'auto';
     }, 0);
   });
+
+
+  // ---------- меню-«поповеры» ----------
+  function closeMenu() {
+    var m = document.querySelector('.popup');
+    if (m) m.parentNode.removeChild(m);
+  }
+  function showMenu(anchor, items) {
+    closeMenu();
+    var m = document.createElement('div');
+    m.className = 'popup';
+    items.forEach(function (it) {
+      if (it === '-') { var sp = document.createElement('div'); sp.className = 'sep'; m.appendChild(sp); return; }
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = it.label;
+      b.addEventListener('mousedown', function (e) { e.preventDefault(); });
+      b.addEventListener('click', function (e) { e.preventDefault(); closeMenu(); it.fn(); });
+      m.appendChild(b);
+    });
+    document.body.appendChild(m);
+    var r = anchor.getBoundingClientRect();
+    m.style.left = Math.max(4, Math.min(r.left, window.innerWidth - m.offsetWidth - 4)) + 'px';
+    m.style.bottom = (window.innerHeight - r.top + 4) + 'px';
+    setTimeout(function () { document.addEventListener('click', closeMenu, { once: true }); }, 0);
+  }
+  function tableOp(name) {
+    return function () {
+      try { quill.focus(); var t = quill.getModule('table'); t[name](); } catch (e) { /* курсор не в таблице */ }
+    };
+  }
+  function bindX(sel, fn) {
+    var el = toolbarEl.querySelector(sel);
+    el.addEventListener('mousedown', function (e) { e.preventDefault(); });
+    el.addEventListener('click', function (e) { e.preventDefault(); fn(el); });
+  }
+  bindX('.ql-img', function () { if (window.Android && window.Android.pickImage) window.Android.pickImage(); });
+  bindX('.ql-tbl', function (el) {
+    showMenu(el, [
+      { label: 'Вставить таблицу 3×3', fn: function () { quill.focus(); quill.getModule('table').insertTable(3, 3); } },
+      { label: 'Вставить таблицу 2×2', fn: function () { quill.focus(); quill.getModule('table').insertTable(2, 2); } },
+      { label: 'Вставить таблицу 4×4', fn: function () { quill.focus(); quill.getModule('table').insertTable(4, 4); } },
+      '-',
+      { label: 'Строка выше', fn: tableOp('insertRowAbove') },
+      { label: 'Строка ниже', fn: tableOp('insertRowBelow') },
+      { label: 'Столбец слева', fn: tableOp('insertColumnLeft') },
+      { label: 'Столбец справа', fn: tableOp('insertColumnRight') },
+      '-',
+      { label: 'Удалить строку', fn: tableOp('deleteRow') },
+      { label: 'Удалить столбец', fn: tableOp('deleteColumn') },
+      { label: 'Удалить таблицу', fn: tableOp('deleteTable') }
+    ]);
+  });
+  bindX('.ql-lh', function (el) {
+    function lh(v) { return function () { quill.focus(); quill.format('lineheight', v, 'user'); }; }
+    showMenu(el, [
+      { label: 'Одинарный (1,0)', fn: lh('1') }, { label: '1,15', fn: lh('1.15') }, { label: '1,5', fn: lh('1.5') },
+      { label: 'Двойной (2,0)', fn: lh('2') }, { label: '2,5', fn: lh('2.5') },
+      '-', { label: 'По умолчанию', fn: lh(false) }
+    ]);
+  });
+
+  // ---------- найти и заменить ----------
+  var fb = document.getElementById('findbar'), f1 = document.getElementById('f1'), f2 = document.getElementById('f2');
+  var fcount = document.getElementById('fcount');
+  function allMatches() {
+    var q = f1.value.toLowerCase();
+    if (!q) return [];
+    var t = quill.getText().toLowerCase(), out = [], i = 0;
+    while ((i = t.indexOf(q, i)) >= 0) { out.push(i); i += q.length; }
+    return out;
+  }
+  function updateCount() { var n = allMatches().length; fcount.textContent = f1.value ? String(n) : ''; }
+  function findStep(dir) {
+    var m = allMatches();
+    updateCount();
+    if (!m.length) return;
+    var sel = quill.getSelection();
+    var pos = sel ? (dir > 0 ? sel.index + sel.length : sel.index) : 0;
+    var idx = -1;
+    if (dir > 0) { for (var i = 0; i < m.length; i++) if (m[i] >= pos) { idx = m[i]; break; } if (idx < 0) idx = m[0]; }
+    else { for (var j = m.length - 1; j >= 0; j--) if (m[j] < pos) { idx = m[j]; break; } if (idx < 0) idx = m[m.length - 1]; }
+    quill.setSelection(idx, f1.value.length, 'user');
+  }
+  function replaceOne() {
+    var sel = quill.getSelection();
+    if (sel && sel.length && quill.getText(sel.index, sel.length).toLowerCase() === f1.value.toLowerCase()) {
+      quill.deleteText(sel.index, sel.length, 'user');
+      quill.insertText(sel.index, f2.value, 'user');
+      quill.setSelection(sel.index + f2.value.length, 0, 'user');
+    }
+    findStep(1);
+  }
+  function replaceAll() {
+    var m = allMatches();
+    for (var i = m.length - 1; i >= 0; i--) {
+      quill.deleteText(m[i], f1.value.length, 'user');
+      quill.insertText(m[i], f2.value, 'user');
+    }
+    updateCount();
+  }
+  function noFocusLoss(id, fn) {
+    var el = document.getElementById(id);
+    el.addEventListener('click', function (e) { e.preventDefault(); fn(); });
+  }
+  bindX('.ql-find', function () { fb.classList.toggle('on'); if (fb.classList.contains('on')) f1.focus(); });
+  noFocusLoss('fclose', function () { fb.classList.remove('on'); });
+  noFocusLoss('fnext', function () { findStep(1); });
+  noFocusLoss('fprev', function () { findStep(-1); });
+  noFocusLoss('frep', replaceOne);
+  noFocusLoss('fall', replaceAll);
+  f1.addEventListener('input', updateCount);
+  f1.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); findStep(1); } });
+
+  // ---------- импорт ----------
+  function pasteHtml(html) {
+    quill.setContents([], 'silent');
+    quill.clipboard.dangerouslyPasteHTML(0, html, 'user');
+    quill.setSelection(0, 0, 'silent');
+  }
 
   var timer = null;
   var ready = false;
@@ -230,6 +390,26 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--text);-webkit-ta
       }
       if (fs) r.setProperty('--fs', fs + 'px');
     },
+    insertImage: function (url) {
+      var r = quill.getSelection(true);
+      quill.insertEmbed(r.index, 'image', url, 'user');
+      quill.setSelection(r.index + 1, 0, 'user');
+    },
+    importDocx: function (url) {
+      return fetch(url).then(function (r) { return r.arrayBuffer(); }).then(function (buf) {
+        return mammoth.convertToHtml({ arrayBuffer: buf }, {
+          convertImage: mammoth.images.imgElement(function (image) {
+            return image.read('base64').then(function (b64) {
+              var u = (window.Android && window.Android.saveImage) ? window.Android.saveImage(b64, image.contentType) : null;
+              return { src: u || ('data:' + image.contentType + ';base64,' + b64) };
+            });
+          })
+        });
+      }).then(function (res) { pasteHtml(res.value); return true; });
+    },
+    importHtml: function (html) { pasteHtml(html); },
+    importText: function (text) { quill.setText(text, 'user'); quill.setSelection(0, 0, 'silent'); },
+    getHtml: function () { return quill.getSemanticHTML().replace(/&nbsp;/g, ' '); },
     flush: flush,
     getText: function () { return quill.getText().replace(/\n$/, ''); },
     getRich: function () { return JSON.stringify(quill.getContents()); },

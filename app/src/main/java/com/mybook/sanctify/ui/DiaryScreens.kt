@@ -212,6 +212,8 @@ fun EntryScreen(vm: AppViewModel, nav: NavController, id: Long) {
     var addVerse by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val controller = remember { RichEditorController() }
+    val pickImage = rememberImageInserter(vm, controller)
 
     LaunchedEffect(id) {
         vm.loadEntry(id)?.let {
@@ -250,7 +252,7 @@ fun EntryScreen(vm: AppViewModel, nav: NavController, id: Long) {
             }
             Box(Modifier.fillMaxWidth().height(1.dp).background(pal.line))
         } else {
-            Column(Modifier.heightIn(max = 300.dp).verticalScroll(rememberScrollState()).padding(12.dp)) {
+            Column(Modifier.heightIn(max = 380.dp).verticalScroll(rememberScrollState()).padding(12.dp)) {
                 OutlinedTextField(
                     value = title, onValueChange = { title = it }, label = { Text("Заголовок") },
                     singleLine = true, modifier = Modifier.fillMaxWidth(),
@@ -261,6 +263,7 @@ fun EntryScreen(vm: AppViewModel, nav: NavController, id: Long) {
                     },
                     supportingText = { Text("Значок календаря — подставить дату: " + todayTitle()) },
                 )
+                AttachmentsSection(vm, nav, id)
                 if (verses.isNotEmpty()) SectionLabel("Стихи")
                 verses.forEach { v ->
                     ClickableCard(onClick = {
@@ -290,9 +293,10 @@ fun EntryScreen(vm: AppViewModel, nav: NavController, id: Long) {
         }
         if (loaded) {
             RichTextEditor(
-                initialRich = initialRich, initialPlain = initialPlain, fontSize = vm.fontSize,
+                initialRich = initialRich, initialPlain = initialPlain, fontSize = vm.fontSize, controller = controller,
                 onChange = { r, t -> rich = r; body = t },
                 onFocusChange = { f -> editorFocused = f; if (f) showTop = false },
+                onPickImage = pickImage,
                 modifier = Modifier.weight(1f).fillMaxWidth(),
             )
         }

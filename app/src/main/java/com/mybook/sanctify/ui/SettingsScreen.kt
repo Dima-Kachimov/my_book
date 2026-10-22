@@ -119,11 +119,12 @@ fun SettingsScreen(vm: AppViewModel, nav: NavController) {
             Label("Резервная копия")
             Text(
                 "Один ZIP-файл: записи дневника, заметки, закладки, выделения, теги, заучивание, все настройки (темы, шрифты, " +
-                    "напоминания, PIN-код) и, по выбору, книги библиотеки и тексты скачанных Библий. " +
+                    "напоминания, PIN-код) и, по выбору, книги, вложения записей (фото, видео, документы) и тексты скачанных Библий. " +
                     "Файл не зашифрован — храните его в надёжном месте.",
                 color = pal.muted, fontSize = 13.sp, modifier = Modifier.padding(vertical = 6.dp),
             )
             SwitchRow("Включать книги библиотеки", vm.backupIncludeBooks) { vm.setBackupOptions(it, vm.backupIncludeBibles) }
+            SwitchRow("Включать фото, видео и документы записей", vm.backupIncludeMedia) { vm.setBackupMedia(it) }
             SwitchRow("Включать тексты Библий (быстрее, чем качать заново)", vm.backupIncludeBibles) { vm.setBackupOptions(vm.backupIncludeBooks, it) }
             Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = { export.launch("sanctification_diary_backup.zip") }) { Text("Сохранить") }
@@ -197,7 +198,7 @@ fun SettingsScreen(vm: AppViewModel, nav: NavController) {
                     "Перекрёстные ссылки: OpenBible.info, лицензия CC BY.\n" +
                     "Слова оригинала и словарь: STEPBible.org / Tyndale House Cambridge, лицензия CC BY 4.0 " +
                     "(лексиконы основаны на Abbott-Smith и BDB).\n" +
-                    "Редактор текста записей: Quill (лицензия BSD-3).",
+                    "Редактор текста записей: Quill (BSD-3); импорт документов Word: Mammoth (BSD-2).",
                 color = pal.muted, fontSize = 12.sp,
             )
             Spacer(Modifier.height(24.dp))

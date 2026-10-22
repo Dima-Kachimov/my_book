@@ -163,6 +163,35 @@ data class VerseTagEntity(
     val verse: Int,
 )
 
+/**
+ * Вложение записи: фото, видео, документ (редактируемый, в т. ч. импортированный из .docx/.txt/.html) или файл.
+ * Файлы лежат в filesDir/media/[fileName]. Для документов текст с форматированием — в [docRich] (Quill Delta, JSON).
+ */
+@Serializable
+@Entity(
+    tableName = "attachments",
+    foreignKeys = [ForeignKey(
+        entity = EntryEntity::class,
+        parentColumns = ["id"],
+        childColumns = ["entryId"],
+        onDelete = ForeignKey.CASCADE,
+    )],
+    indices = [Index("entryId")],
+)
+data class AttachmentEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val entryId: Long,
+    /** photo | video | doc | file */
+    val kind: String,
+    val title: String,
+    val fileName: String = "",
+    val mime: String = "",
+    val sizeBytes: Long = 0,
+    val createdAt: Long,
+    val docRich: String = "",
+    val docText: String = "",
+)
+
 /** Стих(и) на заучивании. box — ступень интервального повторения, dueAt — когда повторить. */
 @Serializable
 @Entity(tableName = "memo_verses", indices = [Index(value = ["book", "chapter", "verseStart", "verseEnd"], unique = true)])
@@ -206,4 +235,5 @@ data class Backup(
     val tags: List<TagEntity> = emptyList(),
     val verseTags: List<VerseTagEntity> = emptyList(),
     val memos: List<MemoEntity> = emptyList(),
+    val attachments: List<AttachmentEntity> = emptyList(),
 )

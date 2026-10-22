@@ -366,7 +366,10 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { dao.updateSection(s.copy(name = name.trim())) }
 
     fun deleteSection(s: SectionEntity) = viewModelScope.launch {
-        if (!s.isDefault) dao.deleteSection(s)
+        if (!s.isDefault) {
+            withContext(Dispatchers.IO) { dao.attachmentsInSection(s.id).forEach { deleteAttachmentFile(it) } }
+            dao.deleteSection(s)
+        }
     }
 
     /** Создаёт запись; если переданы стихи текущей главы — прикрепляет их. */
@@ -394,6 +397,7 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
 
     fun deleteEntry(id: Long) = viewModelScope.launch {
         Reminders.cancelDue(app, id)
+        withContext(Dispatchers.IO) { dao.attachmentsOf(id).forEach { deleteAttachmentFile(it) } }
         dao.deleteEntry(id)
     }
 
@@ -530,7 +534,7 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
         try {
             withContext(Dispatchers.IO) {
                 val out = app.contentResolver.openOutputStream(uri) ?: error("Не удалось открыть файл")
-                BackupManager.writeZip(app, out, backupIncludeBooks, backupIncludeBibles)
+                BackupManager.writeZip(app, out, backupIncludeBooks, backupIncludeBibles, backupIncludeMedia)
             }
             messages.emit("Резервная копия сохранена")
         } catch (e: Exception) {
@@ -567,6 +571,7 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
         prayerReminder = Reminders.config(app, Reminders.PRAYER)
         backupIncludeBooks = prefs.getBoolean("bk_books", true)
         backupIncludeBibles = prefs.getBoolean("bk_bibles", true)
+        backupIncludeMedia = prefs.getBoolean("bk_media", true)
         pinEnabled = prefs.getString("pin_hash", null) != null
         lockDelaySec = prefs.getInt("lock_delay", 60)
         secureScreen = prefs.getBoolean("secure_screen", false)
@@ -685,12 +690,18 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
         if (query.length < 2) return@withContext emptyList()
         val sections = dao.listSections().associateBy { it.id }
         val verseTexts = dao.listEntryVerses().groupBy { it.entryId }
+        val docs = dao.listAttachments().filter { it.kind == "doc" || it.kind == "file" }.groupBy { it.entryId }
         dao.listEntries().sortedByDescending { it.updatedAt }.mapNotNull { e ->
             val inVerses = verseTexts[e.id].orEmpty().firstOrNull { it.text.lowercase().contains(query) }
+            val inDocs = docs[e.id].orEmpty().firstOrNull {
+                it.title.lowercase().contains(query) || it.docText.lowercase().contains(query)
+            }
             val hay = when {
                 e.title.lowercase().contains(query) -> e.title
                 e.body.lowercase().contains(query) -> e.body
                 inVerses != null -> inVerses.text
+                inDocs != null && inDocs.docText.lowercase().contains(query) -> inDocs.docText
+                inDocs != null -> inDocs.title
                 else -> null
             } ?: return@mapNotNull null
             val i = hay.lowercase().indexOf(query).coerceAtLeast(0)
@@ -698,6 +709,75 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
             val sec = sections[e.sectionId]
             DiaryHit(e, sec?.name ?: "", snippet, sec?.isList == true)
         }
+    }
+
+    // ---------- Вложения записей ----------
+    fun attachments(entryId: Long) = dao.attachments(entryId)
+
+    suspend fun attachment(id: Long): AttachmentEntity? = dao.attachment(id)
+
+    private fun deleteAttachmentFile(a: AttachmentEntity) {
+        if (a.fileName.isNotBlank()) File(Media.dir(app), a.fileName).delete()
+    }
+
+    /** Добавляет файлы к записи. [forceKind] — «photo»/«video»; иначе тип определяется по содержимому. */
+    fun addAttachments(entryId: Long, uris: List<Uri>, forceKind: String? = null) = viewModelScope.launch {
+        var ok = 0
+        for (u in uris) {
+            try {
+                withContext(Dispatchers.IO) {
+                    val c = Media.copy(app, u)
+                    dao.insertAttachment(
+                        AttachmentEntity(
+                            entryId = entryId, kind = forceKind ?: Media.kindFor(c.mime, c.name), title = c.name,
+                            fileName = c.file.name, mime = c.mime, sizeBytes = c.file.length(), createdAt = System.currentTimeMillis(),
+                        )
+                    )
+                }
+                ok++
+            } catch (e: Exception) {
+                messages.emit("Не удалось добавить файл: ${e.message ?: e.javaClass.simpleName}")
+            }
+        }
+        if (ok > 0) messages.emit(if (ok == 1) "Добавлено" else "Добавлено: $ok")
+    }
+
+    /** Новый пустой документ внутри записи. */
+    suspend fun createDocument(entryId: Long): Long {
+        val n = dao.attachmentsOf(entryId).count { it.kind == "doc" } + 1
+        return dao.insertAttachment(
+            AttachmentEntity(entryId = entryId, kind = "doc", title = "Документ $n", createdAt = System.currentTimeMillis())
+        )
+    }
+
+    fun renameAttachment(a: AttachmentEntity, title: String) =
+        viewModelScope.launch { dao.updateAttachment(a.copy(title = title.trim().ifBlank { a.title })) }
+
+    fun deleteAttachment(a: AttachmentEntity) = viewModelScope.launch {
+        withContext(Dispatchers.IO) { deleteAttachmentFile(a) }
+        dao.deleteAttachment(a.id)
+    }
+
+    fun saveDoc(id: Long, title: String, rich: String, text: String) = viewModelScope.launch {
+        dao.attachment(id)?.let {
+            if (it.title != title || it.docRich != rich || it.docText != text) {
+                dao.updateAttachment(it.copy(title = title.ifBlank { it.title }, docRich = rich, docText = text))
+            }
+        }
+    }
+
+    /** Картинка для вставки в текст документа: копируется в хранилище, возвращается адрес для редактора. */
+    suspend fun importInlineImage(uri: Uri): String? =
+        withContext(Dispatchers.IO) { runCatching { Media.importImage(app, uri) }.getOrNull() }
+
+    fun mediaFile(a: AttachmentEntity): File = File(Media.dir(app), a.fileName)
+
+    var backupIncludeMedia by mutableStateOf(prefs.getBoolean("bk_media", true))
+        private set
+
+    fun setBackupMedia(on: Boolean) {
+        backupIncludeMedia = on
+        prefs.edit().putBoolean("bk_media", on).apply()
     }
 
     // ---------- PIN-код ----------

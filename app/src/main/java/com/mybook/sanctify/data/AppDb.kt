@@ -11,9 +11,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
     entities = [
         TranslationEntity::class, VerseEntity::class, HighlightEntity::class, NoteEntity::class,
         BookmarkEntity::class, SectionEntity::class, EntryEntity::class, EntryVerseEntity::class,
-        TagEntity::class, VerseTagEntity::class, MemoEntity::class, BookEntity::class,
+        TagEntity::class, VerseTagEntity::class, MemoEntity::class, BookEntity::class, AttachmentEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = false,
 )
 abstract class AppDb : RoomDatabase() {
@@ -79,9 +79,22 @@ abstract class AppDb : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `attachments` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`entryId` INTEGER NOT NULL, `kind` TEXT NOT NULL, `title` TEXT NOT NULL, `fileName` TEXT NOT NULL, " +
+                        "`mime` TEXT NOT NULL, `sizeBytes` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, " +
+                        "`docRich` TEXT NOT NULL, `docText` TEXT NOT NULL, " +
+                        "FOREIGN KEY(`entryId`) REFERENCES `entries`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_attachments_entryId` ON `attachments` (`entryId`)")
+            }
+        }
+
         fun build(ctx: Context): AppDb =
             Room.databaseBuilder(ctx, AppDb::class.java, "diary.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                 .addCallback(object : Callback() {
                     override fun onCreate(db: SupportSQLiteDatabase) {
                         seedTags(db)
