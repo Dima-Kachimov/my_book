@@ -34,8 +34,32 @@ import com.mybook.sanctify.data.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+
+private val weekDays = arrayOf("Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб")
+private val datePrefix = Regex("^\\d{2}\\.\\d{2}\\.\\d{2}\\s+\\p{L}{2}")
+
+/** Сегодняшняя дата для заголовка записи: «20.10.26 Вт». */
+private fun todayTitle(): String {
+    val c = Calendar.getInstance()
+    return String.format(
+        Locale.US, "%02d.%02d.%02d %s",
+        c.get(Calendar.DAY_OF_MONTH), c.get(Calendar.MONTH) + 1, c.get(Calendar.YEAR) % 100,
+        weekDays[c.get(Calendar.DAY_OF_WEEK) - 1],
+    )
+}
+
+/** Пустой заголовок → дата; если уже начинается с даты — обновляет её; иначе ставит дату перед текстом. */
+private fun withTodayDate(title: String): String {
+    val d = todayTitle()
+    return when {
+        title.isBlank() -> d
+        datePrefix.containsMatchIn(title) -> title.replaceFirst(datePrefix, d)
+        else -> "$d $title"
+    }
+}
 
 private val dateFmt = SimpleDateFormat("d MMM yyyy", Locale("ru"))
 
@@ -230,6 +254,12 @@ fun EntryScreen(vm: AppViewModel, nav: NavController, id: Long) {
                 OutlinedTextField(
                     value = title, onValueChange = { title = it }, label = { Text("Заголовок") },
                     singleLine = true, modifier = Modifier.fillMaxWidth(),
+                    trailingIcon = {
+                        IconButton(onClick = { title = withTodayDate(title) }) {
+                            Icon(Icons.Default.Event, "Подставить сегодняшнюю дату", tint = pal.heading)
+                        }
+                    },
+                    supportingText = { Text("Значок календаря — подставить дату: " + todayTitle()) },
                 )
                 if (verses.isNotEmpty()) SectionLabel("Стихи")
                 verses.forEach { v ->
