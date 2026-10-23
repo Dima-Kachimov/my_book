@@ -392,6 +392,14 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--text);-webkit-ta
       }
       if (fs) r.setProperty('--fs', fs + 'px');
     },
+    /** Высота задаётся снаружи (px): иногда WebView в Compose не обновляет высоту окна страницы. */
+    setHeight: function (h) {
+      if (!(h > 0)) return;
+      var px = h + 'px';
+      document.documentElement.style.height = px;
+      document.body.style.height = px;
+      document.getElementById('app').style.height = px;
+    },
     getCaret: function () {
       var r = quill.getSelection() || (quill.selection && quill.selection.savedRange);
       return r ? r.index : -1;

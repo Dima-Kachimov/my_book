@@ -177,11 +177,19 @@ fun RichTextEditor(
                         loader.shouldInterceptRequest(request.url)
 
                     override fun onPageFinished(view: WebView, url: String?) {
+                        if (view.height > 0) {
+                            view.evaluateJavascript("Editor.setHeight(${view.height / view.resources.displayMetrics.density})", null)
+                        }
                         view.evaluateJavascript(
                             "Editor.init(${JSONObject.quote(initialRich)}, ${JSONObject.quote(initialPlain)}, ${themeJson(pal)}, ${fontSize.toInt()})",
                             null,
                         )
                     }
+                }
+                // Реальная высота из Compose передаётся странице, иначе она может «застрять» на старом размере.
+                addOnLayoutChangeListener { v, _, top, _, bottom, _, _, _, _ ->
+                    val h = (bottom - top) / v.resources.displayMetrics.density
+                    if (h > 0) (v as WebView).evaluateJavascript("window.Editor&&Editor.setHeight($h)", null)
                 }
                 loadUrl("${Media.HOST}/assets/editor/index.html")
                 controller.web = this

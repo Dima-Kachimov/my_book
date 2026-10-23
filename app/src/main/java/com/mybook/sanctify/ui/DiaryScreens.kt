@@ -259,7 +259,7 @@ fun EntryScreen(vm: AppViewModel, nav: NavController, id: Long) {
             }
             Box(Modifier.fillMaxWidth().height(1.dp).background(pal.line))
         } else {
-            Column(Modifier.heightIn(max = 380.dp).verticalScroll(rememberScrollState()).padding(12.dp)) {
+            Column(Modifier.heightIn(max = 300.dp).verticalScroll(rememberScrollState()).padding(12.dp)) {
                 OutlinedTextField(
                     value = title, onValueChange = { title = it }, label = { Text("Заголовок") },
                     singleLine = true, modifier = Modifier.fillMaxWidth(),
@@ -313,7 +313,7 @@ fun EntryScreen(vm: AppViewModel, nav: NavController, id: Long) {
                 onPickImage = pickImage,
                 onPickBible = { openBible() },
                 onReady = { vm.takePendingQuote()?.let { controller.insertQuote(it.text, it.ref, it.caret) } },
-                modifier = Modifier.weight(1f).fillMaxWidth(),
+                modifier = Modifier.weight(1f).fillMaxWidth().heightIn(min = 260.dp),
             )
         }
     }
