@@ -34,7 +34,7 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--text);-webkit-ta
 .ql-snow .ql-picker-label svg{right:2px}
 .ql-snow .ql-picker.ql-font{width:150px}.ql-snow .ql-picker.ql-size{width:78px}.ql-snow .ql-picker.ql-header{width:156px}
 /* выпадающие списки открываются вверх */
-.ql-snow .ql-picker-options{position:fixed!important;top:auto!important;background:var(--card);border:1px solid var(--line)!important;box-shadow:0 -4px 14px #0003;max-height:46vh;overflow-y:auto;color:var(--text)}
+.ql-snow .ql-picker-options{position:fixed!important;bottom:auto!important;background:var(--card);border:1px solid var(--line)!important;box-shadow:0 -4px 14px #0003;max-height:300px;overflow-y:auto;color:var(--text)}
 .ql-snow .ql-color-picker .ql-picker-options,.ql-snow .ql-icon-picker .ql-picker-options{width:200px}
 .ql-snow .ql-picker-item{padding:6px 8px}
 .ql-toolbar button.ql-undo::before{content:"↶";font-size:22px;color:var(--text)}
@@ -65,7 +65,7 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--text);-webkit-ta
 .ql-editor table{border-collapse:collapse;width:100%;margin:8px 0;table-layout:fixed}
 .ql-editor td{border:1px solid var(--muted);padding:6px 8px;vertical-align:top;word-wrap:break-word}
 .ql-editor td:focus{outline:2px solid var(--accent)}
-.popup{position:fixed;z-index:50;background:var(--card);color:var(--text);border:1px solid var(--line);border-radius:12px;box-shadow:0 -4px 18px #0004;padding:4px;max-height:60vh;overflow-y:auto;min-width:190px}
+.popup{position:fixed;z-index:50;background:var(--card);color:var(--text);border:1px solid var(--line);border-radius:12px;box-shadow:0 -4px 18px #0004;padding:4px;max-height:400px;overflow-y:auto;min-width:190px}
 .popup button{display:block;width:100%;text-align:left;border:0;background:none;color:var(--text);font:15px sans-serif;padding:11px 12px;border-radius:8px}
 .popup button:active{background:var(--soft)}
 .popup .sep{height:1px;background:var(--line);margin:4px 0}
@@ -209,6 +209,12 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--text);-webkit-ta
   bindClick('.ql-undo', function () { quill.history.undo(); });
   bindClick('.ql-redo', function () { quill.history.redo(); });
 
+  // Над кнопкой: считаем от верхнего края (innerHeight/vh в WebView бывают устаревшими).
+  function placeAbove(el, r) {
+    el.style.maxHeight = Math.max(120, Math.min(r.top - 8, 360)) + 'px';
+    el.style.top = Math.max(4, r.top - el.offsetHeight - 4) + 'px';
+  }
+
   // Выпадающие списки панели рисуем поверх (fixed), иначе их обрезает прокручиваемая панель.
   toolbarEl.addEventListener('click', function (e) {
     var label = e.target.closest ? e.target.closest('.ql-picker-label') : null;
@@ -220,8 +226,7 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--text);-webkit-ta
       var r = label.getBoundingClientRect();
       var left = Math.max(4, Math.min(r.left, window.innerWidth - opts.offsetWidth - 4));
       opts.style.left = left + 'px';
-      opts.style.bottom = (window.innerHeight - r.top + 4) + 'px';
-      opts.style.top = 'auto';
+      placeAbove(opts, r);
     }, 0);
   });
 
@@ -247,7 +252,7 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--text);-webkit-ta
     document.body.appendChild(m);
     var r = anchor.getBoundingClientRect();
     m.style.left = Math.max(4, Math.min(r.left, window.innerWidth - m.offsetWidth - 4)) + 'px';
-    m.style.bottom = (window.innerHeight - r.top + 4) + 'px';
+    placeAbove(m, r);
     setTimeout(function () { document.addEventListener('click', closeMenu, { once: true }); }, 0);
   }
   function tableOp(name) {
