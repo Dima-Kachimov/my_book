@@ -8,6 +8,14 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateCentroid
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -21,6 +29,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalConfiguration
@@ -163,6 +175,28 @@ private fun BookCard(b: BookEntity, onOpen: () -> Unit, onRename: () -> Unit, on
     }
 }
 
+/** Масштабирование двумя пальцами; одним пальцем — обычная прокрутка (события не перехватываются). */
+private fun Modifier.pinchGestures(
+    onGesture: (centroid: Offset, pan: Offset, zoom: Float) -> Unit,
+    onEnd: () -> Unit,
+): Modifier = pointerInput(Unit) {
+    awaitEachGesture {
+        awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+        var multi = false
+        do {
+            val event = awaitPointerEvent(PointerEventPass.Initial)
+            if (event.changes.count { it.pressed } >= 2) {
+                multi = true
+                val zoom = event.calculateZoom()
+                val pan = event.calculatePan()
+                if (zoom != 1f || pan != Offset.Zero) onGesture(event.calculateCentroid(useCurrent = true), pan, zoom)
+                event.changes.forEach { if (it.positionChanged()) it.consume() }
+            }
+        } while (event.changes.any { it.pressed })
+        if (multi) onEnd()
+    }
+}
+
 @Composable
 fun BookReaderScreen(vm: AppViewModel, nav: NavController, id: Long) {
     val pal = LocalPalette.current
@@ -201,7 +235,17 @@ private fun TextBody(vm: AppViewModel, b: BookEntity) {
                 }
             }
             DisposableEffect(list) { onDispose { vm.saveBookProgress(b.id, list.firstVisibleItemIndex, paras.size) } }
-            LazyColumn(state = list, contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp)) {
+            var live by remember { mutableFloatStateOf(vm.fontSize) }
+            LazyColumn(
+                state = list, contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
+                modifier = Modifier.pinchGestures(
+                    onGesture = { _, _, z ->
+                        live = (live * z).coerceIn(14f, 44f)
+                        vm.changeFontSize(live)
+                    },
+                    onEnd = { live = vm.fontSize },
+                ),
+            ) {
                 items(paras.size) { i ->
                     val p = paras[i]
                     if (p.heading) {
@@ -237,7 +281,9 @@ private fun PdfBody(vm: AppViewModel, b: BookEntity) {
     }
     DisposableEffect(renderer) { onDispose { runCatching { renderer.close() } } }
     val mutex = remember { Mutex() }
-    val widthPx = with(LocalDensity.current) { LocalConfiguration.current.screenWidthDp.dp.roundToPx() }
+    val density = LocalDensity.current
+    val screenWidthDp = LocalConfiguration.current.screenWidthDp
+    val widthPx = with(density) { screenWidthDp.dp.roundToPx() }
     val count = renderer.pageCount
     val list = rememberLazyListState(initialFirstVisibleItemIndex = b.lastIndex.coerceIn(0, (count - 1).coerceAtLeast(0)))
     LaunchedEffect(list) {
@@ -247,29 +293,72 @@ private fun PdfBody(vm: AppViewModel, b: BookEntity) {
         }
     }
     DisposableEffect(list) { onDispose { vm.saveBookProgress(b.id, list.firstVisibleItemIndex, count) } }
-    LazyColumn(state = list, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        items(count) { i ->
-            val bmp by produceState<Bitmap?>(null, i) {
-                value = withContext(Dispatchers.IO) {
-                    mutex.withLock {
-                        runCatching {
-                            renderer.openPage(i).use { page ->
-                                val h = (widthPx.toFloat() / page.width * page.height).toInt().coerceAtLeast(1)
-                                val out = Bitmap.createBitmap(widthPx, h, Bitmap.Config.ARGB_8888)
-                                out.eraseColor(android.graphics.Color.WHITE)
-                                page.render(out, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                                out
-                            }
-                        }.getOrNull()
+
+    // Масштаб: щипок двумя пальцами или двойное касание. Картинка страницы перерисовывается чётче после жеста.
+    var zoom by remember { mutableFloatStateOf(1f) }
+    var sharp by remember { mutableFloatStateOf(1.5f) }
+    val hScroll = rememberScrollState()
+    var pendingScroll by remember { mutableStateOf<Int?>(null) }
+    LaunchedEffect(zoom) {
+        pendingScroll?.let { target ->
+            withFrameNanos { }
+            hScroll.scrollTo(target)
+            pendingScroll = null
+        }
+    }
+    fun applyZoom(newZoom: Float, focusX: Float) {
+        val z = newZoom.coerceIn(1f, 5f)
+        val ratio = z / zoom
+        pendingScroll = ((hScroll.value + focusX) * ratio - focusX).toInt().coerceAtLeast(0)
+        zoom = z
+    }
+    val renderWidth = (widthPx * sharp).toInt().coerceAtMost(3200)
+
+    Box(
+        Modifier.fillMaxSize()
+            .pinchGestures(
+                onGesture = { c, pan, z ->
+                    applyZoom(zoom * z, c.x)
+                    hScroll.dispatchRawDelta(-pan.x)
+                    list.dispatchRawDelta(-pan.y)
+                },
+                onEnd = { sharp = (kotlin.math.ceil(zoom * 2f) / 2f).coerceIn(1.5f, 4f) },
+            )
+            .pointerInput(Unit) {
+                detectTapGestures(onDoubleTap = { p ->
+                    applyZoom(if (zoom > 1.2f) 1f else 2.5f, p.x)
+                    sharp = if (zoom > 1.2f) 1.5f else 3f
+                })
+            }
+            .horizontalScroll(hScroll),
+    ) {
+        LazyColumn(
+            state = list, verticalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.width((screenWidthDp * zoom).dp).fillMaxHeight(),
+        ) {
+            items(count) { i ->
+                val bmp by produceState<Bitmap?>(null, i, renderWidth) {
+                    value = withContext(Dispatchers.IO) {
+                        mutex.withLock {
+                            runCatching {
+                                renderer.openPage(i).use { page ->
+                                    val h = (renderWidth.toFloat() / page.width * page.height).toInt().coerceAtLeast(1)
+                                    val out = Bitmap.createBitmap(renderWidth, h, Bitmap.Config.ARGB_8888)
+                                    out.eraseColor(android.graphics.Color.WHITE)
+                                    page.render(out, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                                    out
+                                }
+                            }.getOrNull()
+                        }
                     }
                 }
-            }
-            val image = bmp
-            if (image != null) {
-                Image(image.asImageBitmap(), contentDescription = "Страница ${i + 1}", modifier = Modifier.fillMaxWidth())
-            } else {
-                Box(Modifier.fillMaxWidth().height(420.dp).background(Color.White), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
+                val image = bmp
+                if (image != null) {
+                    Image(image.asImageBitmap(), contentDescription = "Страница ${i + 1}", modifier = Modifier.fillMaxWidth())
+                } else {
+                    Box(Modifier.fillMaxWidth().height((420 * zoom).dp).background(Color.White), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
+                    }
                 }
             }
         }
